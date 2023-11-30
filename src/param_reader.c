@@ -1,8 +1,8 @@
 #include "param_reader.h"
 #include "error.h"
+#include "hypetrace.h"
 #include "strbuf.h"
 #include "string.h"
-#include "hypetrace.h"
 #include <errno.h>
 #include <stdio.h>
 
@@ -22,7 +22,7 @@ union HTError HTParamReader_new(struct HTParamReader *self, FILE *file) {
     self->file = file;
     self->pos_row = 0;
     self->pos_col = 0;
-    union HTError err = HTParamReader_read_header(&self);
+    union HTError err = HTParamReader_read_header(self);
     if (err.code != HTNoError) {
         return err;
     }
@@ -65,6 +65,7 @@ static void HTParamReader_push_pending_chars(struct HTStrBuf *field, enum State 
         HTStrBuf_push(field, '\r');
         *state = StateField;
         break;
+    default:;
     }
 }
 

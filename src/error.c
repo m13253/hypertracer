@@ -4,7 +4,7 @@
 
 void HTError_drop(union HTError *err) {
     if (err->code == HTErrDuplicatedColumn) {
-        free(err->dup.column_name.buf);
+        free((char *) err->dup.column_name.buf);
     }
 }
 
@@ -14,11 +14,12 @@ union HTError HTError_new_duplicated_column(const char *column_name, size_t colu
     if (column_name_len == 0) {
         err.dup.column_name.buf = NULL;
     } else {
-        err.dup.column_name.buf = malloc(column_name_len);
-        if (!err.dup.column_name.buf) {
+        char *buf = malloc(column_name_len);
+        if (!buf) {
             abort();
         }
-        memcpy(err.dup.column_name.buf, column_name, column_name_len);
+        memcpy(buf, column_name, column_name_len);
+        err.dup.column_name.buf = buf;
     }
     err.dup.column_name.len = column_name_len;
     err.dup.index_a = index_a;
