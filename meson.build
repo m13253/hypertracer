@@ -38,3 +38,5 @@ pkg_mod.generate(
   libraries : lib,
   version : '0.1',
 )
+
+subdir('test')

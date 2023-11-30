@@ -18,10 +18,8 @@ typedef enum HTErrorCode {
     HTNoError,
     HTEndOfFile,
     HTErrIO,
-    HTErrParsingQuoteNotClosed,
-    HTErrParsingTooFewColumns,
-    HTErrParsingTooManyColumns,
-    HTErrDuplicatedColumn,
+    HTErrQuoteNotClosed,
+    HTErrColumnDuplicated,
 } HTErrorCode;
 
 typedef union HTError {
@@ -36,18 +34,21 @@ typedef union HTError {
         enum HTErrorCode code;
         uint64_t pos_row;
         uint64_t pos_col;
-    } parser;
+    } quote;
     struct {
         enum HTErrorCode code;
-        struct HTStrView column_name;
+        struct HTStrView name;
         size_t index_a;
         size_t index_b;
-    } dup;
+    } column;
 } HTError;
 
-union HTError HTParamReader_new(struct HTParamReader *self, FILE *file);
+union HTError HTParamReader_new(struct HTParamReader **self, FILE *file);
 void HTParamReader_drop(struct HTParamReader *self);
 union HTError HTParamReader_read_row(struct HTParamReader *self);
 _Bool HTParamReader_get(struct HTParamReader *self, const char *column, size_t column_len, struct HTStrView *out);
+
+void HTError_drop(union HTError *err);
+int HTError_print(const union HTError *err, FILE *file);
 
 #endif
