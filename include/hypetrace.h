@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct HTCsvReader HTCsvReader;
 
 typedef struct HTCsvWriter HTCsvWriter;
@@ -54,5 +58,9 @@ _Bool HTCsvReader_get_column_by_name(const struct HTCsvReader *self, const char 
 
 void HTError_free(union HTError *err);
 int HTError_print(const union HTError *err, FILE *file);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

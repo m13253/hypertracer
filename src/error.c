@@ -1,5 +1,6 @@
 #define __STDC_WANT_LIB_EXT1__ 1
 #include "error.h"
+#include "strview.h"
 #include "hypetrace.h"
 #include <inttypes.h>
 #include <stdlib.h>
@@ -9,16 +10,15 @@ union HTError HTError_new_column(const char *column_name, size_t column_name_len
     union HTError err;
     err.column.code = HTErrColumnDuplicated;
     if (column_name_len == 0) {
-        err.column.name.buf = NULL;
+        err.column.name = HTStrView_new();
     } else {
         char *buf = malloc(column_name_len);
         if (!buf) {
             abort();
         }
         memcpy(buf, column_name, column_name_len);
-        err.column.name.buf = buf;
+        err.column.name = HTStrView_from_HTString(buf, column_name_len);
     }
-    err.column.name.len = column_name_len;
     err.column.index_a = index_a;
     err.column.index_b = index_b;
     return err;

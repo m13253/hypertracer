@@ -5,4 +5,5 @@
 #include "hashmap.h"
 #include "strbuilder.h"
 #include "string.h"
+#include "strview.h"
 #include <hypetrace.h>
