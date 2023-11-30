@@ -5,9 +5,9 @@ project('hypetrace', 'c',
 
 sources = [
   'src/array.c',
+  'src/csvread_error.c',
   'src/csvreader.c',
   'src/csvwriter.c',
-  'src/error.c',
   'src/hashmap.c',
   'src/hypetrace.c',
   'src/siphash.c',

@@ -2,17 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void check_error(HTError *err) {
-    if (err->code != HTNoError) {
-        fputs("Error: ", stderr);
-        HTError_print(err, stderr);
-        fputc('\n', stderr);
-        HTError_free(err);
-        exit(1);
-    }
-    HTError_free(err);
-}
-
 int main(int argc, char *argv[]) {
     if (argc < 3) {
         printf("Usage %s FILE.csv <COL1> <COL2> ...\n", argv[0]);
@@ -20,18 +9,20 @@ int main(int argc, char *argv[]) {
     }
     FILE *file = fopen(argv[1], "rb");
     HTCsvReader *reader;
-    HTError err = HTCsvReader_new(&reader, file);
-    check_error(&err);
+    HTCsvReadError err = HTCsvReader_new(&reader, file);
+    HTCsvReadError_panic(&err);
+    HTCsvReadError_free(&err);
     for (;;) {
         err = HTCsvReader_read_row(reader);
         if (err.code == HTEndOfFile) {
-            HTError_free(&err);
+            HTCsvReadError_free(&err);
             break;
         }
-        check_error(&err);
+        HTCsvReadError_panic(&err);
+        HTCsvReadError_free(&err);
         for (int i = 2; i < argc; i++) {
             HTStrView str;
-            if (!HTCsvReader_value_by_column_name(reader, argv[i], strlen(argv[i]), &str)) {
+            if (!HTCsvReader_value_by_column_name(reader, &str, argv[i], strlen(argv[i]))) {
                 str.buf = "(N/A)";
                 str.len = 5;
             }

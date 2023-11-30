@@ -1,7 +1,7 @@
 #include "array.h"
+#include "csvread_error.h"
 #include "csvreader.h"
 #include "csvwriter.h"
-#include "error.h"
 #include "hashmap.h"
 #include "strbuilder.h"
 #include "string.h"
