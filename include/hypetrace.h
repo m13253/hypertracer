@@ -49,12 +49,12 @@ typedef union HTError {
 
 union HTError HTCsvReader_new(struct HTCsvReader **self, FILE *file);
 void HTCsvReader_free(struct HTCsvReader *self);
-size_t HTCsvReader_num_columns(const struct HTCsvReader *self);
-struct HTStrView HTCsvReader_get_column_name_by_index(const struct HTCsvReader *self, size_t column);
-_Bool HTCsvReader_get_column_index_by_name(const struct HTCsvReader *self, const char *column, size_t column_len, size_t *out);
 union HTError HTCsvReader_read_row(struct HTCsvReader *self);
-struct HTStrView HTCsvReader_get_column_by_index(const struct HTCsvReader *self, size_t column);
-_Bool HTCsvReader_get_column_by_name(const struct HTCsvReader *self, const char *column, size_t column_len, struct HTStrView *out);
+size_t HTCsvReader_num_columns(const struct HTCsvReader *self);
+struct HTStrView HTCsvReader_column_name_by_index(const struct HTCsvReader *self, size_t column);
+_Bool HTCsvReader_column_index_by_name(const struct HTCsvReader *self, const char *column, size_t column_len, size_t *out);
+struct HTStrView HTCsvReader_value_by_column_index(const struct HTCsvReader *self, size_t column);
+_Bool HTCsvReader_value_by_column_name(const struct HTCsvReader *self, const char *column, size_t column_len, struct HTStrView *out);
 
 void HTError_free(union HTError *err);
 int HTError_print(const union HTError *err, FILE *file);
