@@ -102,6 +102,7 @@ static union HTError HTCsvReader_read_header(struct HTCsvReader *self) {
                     return HTError_new_quote(self->pos_row, self->pos_col);
                 }
                 HTArray_push(&self->head_buffer, field.buf, field.len, field.cap);
+                HTArray_shrink(&self->head_buffer);
                 return HTError_new_no_error();
             }
         }
@@ -115,6 +116,7 @@ static union HTError HTCsvReader_read_header(struct HTCsvReader *self) {
                 break;
             }
             HTArray_push(&self->head_buffer, field.buf, field.len, field.cap);
+            HTArray_shrink(&self->head_buffer);
             self->pos_row++;
             self->pos_col = 0;
             return HTError_new_no_error();

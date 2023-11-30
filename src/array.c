@@ -93,7 +93,7 @@ void HTArray_shrink(struct HTArray *self) {
         free(self->data);
         self->data = NULL;
     } else {
-        self->data = realloc(self->data, self->cap);
+        self->data = realloc(self->data, self->cap * sizeof self->data[0]);
         if (!self->data) {
             abort();
         }
