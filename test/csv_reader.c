@@ -19,11 +19,11 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
     FILE *file = fopen(argv[1], "rb");
-    HTCSVReader *reader;
-    HTError err = HTCSVReader_new(&reader, file);
+    HTCsvReader *reader;
+    HTError err = HTCsvReader_new(&reader, file);
     check_error(&err);
     for (;;) {
-        err = HTCSVReader_read_row(reader);
+        err = HTCsvReader_read_row(reader);
         if (err.code == HTEndOfFile) {
             HTError_free(&err);
             break;
@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
         check_error(&err);
         for (int i = 2; i < argc; i++) {
             HTStrView str;
-            if (!HTCSVReader_get_column_by_name(reader, argv[i], strlen(argv[i]), &str)) {
+            if (!HTCsvReader_get_column_by_name(reader, argv[i], strlen(argv[i]), &str)) {
                 str.buf = "(N/A)";
                 str.len = 5;
             }
@@ -44,6 +44,6 @@ int main(int argc, char *argv[]) {
         }
         fputc('\n', stdout);
     }
-    HTCSVReader_free(reader);
+    HTCsvReader_free(reader);
     return 0;
 }

@@ -71,7 +71,7 @@ void HTArray_push(struct HTArray *self, char *value, size_t value_len, size_t va
     if (self->len == self->cap) {
         HTArray_grow(self);
     }
-    self->data[self->len] = HTString_from_HTStrBuf(value, value_len, value_cap);
+    self->data[self->len] = HTString_from_HTStrBuilder(value, value_len, value_cap);
     self->len++;
 }
 
@@ -79,7 +79,7 @@ bool HTArray_try_push(struct HTArray *self, char *value, size_t value_len, size_
     if (self->len == self->cap) {
         return false;
     }
-    self->data[self->len] = HTString_from_HTStrBuf(value, value_len, value_cap);
+    self->data[self->len] = HTString_from_HTStrBuilder(value, value_len, value_cap);
     self->len++;
     return true;
 }

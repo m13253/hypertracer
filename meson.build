@@ -5,13 +5,13 @@ project('hypetrace', 'c',
 
 sources = [
   'src/array.c',
-  'src/csv_reader.c',
-  'src/csv_writer.c',
+  'src/csvreader.c',
+  'src/csvwriter.c',
   'src/error.c',
   'src/hashmap.c',
   'src/hypetrace.c',
   'src/siphash.c',
-  'src/strbuf.c',
+  'src/strbuilder.c',
   'src/string.c',
 ]
 

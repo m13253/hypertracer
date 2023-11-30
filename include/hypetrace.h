@@ -5,9 +5,9 @@
 #include <stdint.h>
 #include <stdio.h>
 
-typedef struct HTCSVReader HTCSVReader;
+typedef struct HTCsvReader HTCsvReader;
 
-typedef struct HTCSVWriter HTCSVWriter;
+typedef struct HTCsvWriter HTCsvWriter;
 
 typedef struct HTStrView {
     const char *buf;
@@ -43,10 +43,14 @@ typedef union HTError {
     } column;
 } HTError;
 
-union HTError HTCSVReader_new(struct HTCSVReader **self, FILE *file);
-void HTCSVReader_free(struct HTCSVReader *self);
-union HTError HTCSVReader_read_row(struct HTCSVReader *self);
-_Bool HTCSVReader_get_column_by_name(struct HTCSVReader *self, const char *column, size_t column_len, struct HTStrView *out);
+union HTError HTCsvReader_new(struct HTCsvReader **self, FILE *file);
+void HTCsvReader_free(struct HTCsvReader *self);
+size_t HTCsvReader_num_columns(const struct HTCsvReader *self);
+struct HTStrView HTCsvReader_get_column_name_by_index(const struct HTCsvReader *self, size_t column);
+_Bool HTCsvReader_get_column_index_by_name(const struct HTCsvReader *self, const char *column, size_t column_len, size_t *out);
+union HTError HTCsvReader_read_row(struct HTCsvReader *self);
+struct HTStrView HTCsvReader_get_column_by_index(const struct HTCsvReader *self, size_t column);
+_Bool HTCsvReader_get_column_by_name(const struct HTCsvReader *self, const char *column, size_t column_len, struct HTStrView *out);
 
 void HTError_free(union HTError *err);
 int HTError_print(const union HTError *err, FILE *file);

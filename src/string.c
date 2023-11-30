@@ -1,13 +1,12 @@
 #include "string.h"
 #include <stdlib.h>
 
-struct HTString HTString_from_HTStrBuf(char *buf, size_t len, size_t cap) {
+struct HTString HTString_from_HTStrBuilder(char *buf, size_t len, size_t cap) {
+    struct HTString self;
     if (len == 0) {
         free(buf);
-        return HTString_from_HTStrView(NULL, 0);
-    }
-    struct HTString self;
-    if (len == cap) {
+        self.buf = NULL;
+    } else if (len == cap) {
         self.buf = buf;
     } else {
         self.buf = realloc(buf, len);
@@ -16,20 +15,9 @@ struct HTString HTString_from_HTStrBuf(char *buf, size_t len, size_t cap) {
         }
     }
     self.len = len;
-    self.owned = true;
-    return self;
-}
-
-struct HTString HTString_from_HTStrView(const char *buf, size_t len) {
-    struct HTString self;
-    self.buf = (char *) buf;
-    self.len = len;
-    self.owned = false;
     return self;
 }
 
 void HTString_free(struct HTString *self) {
-    if (self->owned) {
-        free(self->buf);
-    }
+    free(self->buf);
 }

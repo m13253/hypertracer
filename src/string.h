@@ -7,11 +7,9 @@
 struct HTString {
     char *buf;
     size_t len;
-    bool owned;
 };
 
-struct HTString HTString_from_HTStrBuf(char *buf, size_t len, size_t cap);
-struct HTString HTString_from_HTStrView(const char *buf, size_t len);
+struct HTString HTString_from_HTStrBuilder(char *buf, size_t len, size_t cap);
 void HTString_free(struct HTString *self);
 
 #endif
