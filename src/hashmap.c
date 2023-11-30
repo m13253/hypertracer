@@ -31,7 +31,7 @@ void HTHashmap_drop(struct HTHashmap *self) {
 static uint64_t HTHashmap_hash(const char *key, size_t key_len) {
     const uint8_t secret[16] = {0};
     uint8_t hash_buf[8];
-    siphash(key, key_len, secret, hash_buf, sizeof hash_buf);
+    siphash(key_len == 0 ? "" : key, key_len, secret, hash_buf, sizeof hash_buf);
     return (
         (uint64_t) hash_buf[0] |
         ((uint64_t) hash_buf[1] << 8) |

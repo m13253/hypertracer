@@ -18,7 +18,9 @@ struct HTArray HTArray_new(void) {
 
 struct HTArray HTArray_with_capacity(size_t cap) {
     struct HTArray self;
-    if (cap != 0) {
+    if (cap == 0) {
+        self.data = NULL;
+    } else {
         if (cap > SIZE_MAX / sizeof self.data[0]) {
             abort();
         }
