@@ -5,14 +5,14 @@ project('hypetrace', 'c',
 
 sources = [
   'src/array.c',
+  'src/csv_reader.c',
+  'src/csv_writer.c',
   'src/error.c',
   'src/hashmap.c',
   'src/hypetrace.c',
-  'src/param_reader.c',
   'src/siphash.c',
   'src/strbuf.c',
   'src/string.c',
-  'src/trace_writer.c',
 ]
 
 lib = static_library('hypetrace', sources,

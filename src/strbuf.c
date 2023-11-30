@@ -16,7 +16,7 @@ struct HTStrBuf HTStrBuf_new(void) {
     return self;
 }
 
-void HTStrBuf_drop(struct HTStrBuf *self) {
+void HTStrBuf_free(struct HTStrBuf *self) {
     free(self->buf);
 }
 

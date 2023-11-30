@@ -1,12 +1,12 @@
-#ifndef HT_PARAM_READER_H
-#define HT_PARAM_READER_H
+#ifndef HT_CSV_READER_H
+#define HT_CSV_READER_H
 
 #include "array.h"
 #include "hashmap.h"
 #include <stdint.h>
 #include <stdio.h>
 
-struct HTParamReader {
+struct HTCSVReader {
     FILE *file;
     uint64_t pos_row;
     uint64_t pos_col;

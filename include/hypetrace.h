@@ -5,9 +5,9 @@
 #include <stdint.h>
 #include <stdio.h>
 
-typedef struct HTParamReader HTParamReader;
+typedef struct HTCSVReader HTCSVReader;
 
-typedef struct HTTraceWriter HTTraceWriter;
+typedef struct HTCSVWriter HTCSVWriter;
 
 typedef struct HTStrView {
     const char *buf;
@@ -43,12 +43,12 @@ typedef union HTError {
     } column;
 } HTError;
 
-union HTError HTParamReader_new(struct HTParamReader **self, FILE *file);
-void HTParamReader_drop(struct HTParamReader *self);
-union HTError HTParamReader_read_row(struct HTParamReader *self);
-_Bool HTParamReader_get(struct HTParamReader *self, const char *column, size_t column_len, struct HTStrView *out);
+union HTError HTCSVReader_new(struct HTCSVReader **self, FILE *file);
+void HTCSVReader_free(struct HTCSVReader *self);
+union HTError HTCSVReader_read_row(struct HTCSVReader *self);
+_Bool HTCSVReader_get_column_by_name(struct HTCSVReader *self, const char *column, size_t column_len, struct HTStrView *out);
 
-void HTError_drop(union HTError *err);
+void HTError_free(union HTError *err);
 int HTError_print(const union HTError *err, FILE *file);
 
 #endif

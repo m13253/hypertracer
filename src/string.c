@@ -28,7 +28,7 @@ struct HTString HTString_from_HTStrView(const char *buf, size_t len) {
     return self;
 }
 
-void HTString_drop(struct HTString *self) {
+void HTString_free(struct HTString *self) {
     if (self->owned) {
         free(self->buf);
     }

@@ -24,7 +24,7 @@ union HTError HTError_new_column(const char *column_name, size_t column_name_len
     return err;
 }
 
-void HTError_drop(union HTError *err) {
+void HTError_free(union HTError *err) {
     if (err->code == HTErrColumnDuplicated) {
         free((char *) err->column.name.buf);
     }

@@ -24,7 +24,7 @@ struct HTHashmap HTHashmap_new(size_t num_elements) {
     return self;
 }
 
-void HTHashmap_drop(struct HTHashmap *self) {
+void HTHashmap_free(struct HTHashmap *self) {
     free(self->data);
 }
 

@@ -1,4 +1,4 @@
-#include "param_reader.h"
+#include "csv_reader.h"
 #include "error.h"
 #include "hypetrace.h"
 #include "strbuf.h"
@@ -16,19 +16,19 @@ enum State {
     State0D,
 };
 
-static union HTError HTParamReader_read_header(struct HTParamReader *self);
+static union HTError HTCSVReader_read_header(struct HTCSVReader *self);
 
-union HTError HTParamReader_new(struct HTParamReader **out, FILE *file) {
+union HTError HTCSVReader_new(struct HTCSVReader **out, FILE *file) {
     *out = malloc(sizeof **out);
     if (!*out) {
         abort();
     }
 
-    struct HTParamReader *self = *out;
+    struct HTCSVReader *self = *out;
     self->file = file;
     self->pos_row = 0;
     self->pos_col = 0;
-    union HTError err = HTParamReader_read_header(self);
+    union HTError err = HTCSVReader_read_header(self);
     if (err.code != HTNoError) {
         free(self);
         return err;
@@ -41,8 +41,8 @@ union HTError HTParamReader_new(struct HTParamReader **out, FILE *file) {
         size_t old_index = HTHashmap_try_set(&self->column_index, column->buf, column->len, i);
         if (old_index != i && column->len != 0) {
             union HTError err = HTError_new_column(column->buf, column->len, old_index, i);
-            HTArray_drop(&self->head_buffer);
-            HTHashmap_drop(&self->column_index);
+            HTArray_free(&self->head_buffer);
+            HTHashmap_free(&self->column_index);
             free(self);
             return err;
         }
@@ -51,15 +51,15 @@ union HTError HTParamReader_new(struct HTParamReader **out, FILE *file) {
     return HTError_new_no_error();
 }
 
-void HTParamReader_drop(struct HTParamReader *self) {
+void HTCSVReader_free(struct HTCSVReader *self) {
     fclose(self->file);
-    HTArray_drop(&self->head_buffer);
-    HTArray_drop(&self->line_buffer);
-    HTHashmap_drop(&self->column_index);
+    HTArray_free(&self->head_buffer);
+    HTArray_free(&self->line_buffer);
+    HTHashmap_free(&self->column_index);
     free(self);
 }
 
-static void HTParamReader_push_pending_chars(struct HTStrBuf *field, enum State *state) {
+static void HTCSVReader_push_pending_chars(struct HTStrBuf *field, enum State *state) {
     switch (*state) {
     case StateEF:
         HTStrBuf_push(field, '\xef');
@@ -78,7 +78,7 @@ static void HTParamReader_push_pending_chars(struct HTStrBuf *field, enum State 
     }
 }
 
-static union HTError HTParamReader_read_header(struct HTParamReader *self) {
+static union HTError HTCSVReader_read_header(struct HTCSVReader *self) {
     enum State state = StateStart;
     self->head_buffer = HTArray_new();
     struct HTStrBuf field = HTStrBuf_new();
@@ -87,17 +87,17 @@ static union HTError HTParamReader_read_header(struct HTParamReader *self) {
         if (ch == EOF) {
             if (ferror_unlocked(self->file)) {
                 union HTError err = HTError_new_io(self->pos_row, self->pos_col, errno);
-                HTStrBuf_drop(&field);
-                HTArray_drop(&self->head_buffer);
+                HTStrBuf_free(&field);
+                HTArray_free(&self->head_buffer);
                 return err;
             } else {
-                HTParamReader_push_pending_chars(&field, &state);
+                HTCSVReader_push_pending_chars(&field, &state);
                 if (state == StateStart) {
                     return HTError_new_no_error();
                 }
                 if (state == StateQuote) {
-                    HTStrBuf_drop(&field);
-                    HTArray_drop(&self->head_buffer);
+                    HTStrBuf_free(&field);
+                    HTArray_free(&self->head_buffer);
                     return HTError_new_quote(self->pos_row, self->pos_col);
                 }
                 HTArray_push(&self->head_buffer, field.buf, field.len, field.cap);
@@ -107,7 +107,7 @@ static union HTError HTParamReader_read_header(struct HTParamReader *self) {
         switch ((char) ch) {
         case '\n':
             if (state != State0D) {
-                HTParamReader_push_pending_chars(&field, &state);
+                HTCSVReader_push_pending_chars(&field, &state);
             }
             if (state == StateQuote) {
                 HTStrBuf_push(&field, (char) ch);
@@ -118,7 +118,7 @@ static union HTError HTParamReader_read_header(struct HTParamReader *self) {
             self->pos_col = 0;
             return HTError_new_no_error();
         case '\r':
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
                 HTStrBuf_push(&field, (char) ch);
                 break;
@@ -126,7 +126,7 @@ static union HTError HTParamReader_read_header(struct HTParamReader *self) {
             state = State0D;
             break;
         case '"':
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
                 state = StateQuoteEnd;
                 break;
@@ -137,7 +137,7 @@ static union HTError HTParamReader_read_header(struct HTParamReader *self) {
             state = StateQuote;
             break;
         case ',':
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
                 HTStrBuf_push(&field, (char) ch);
                 break;
@@ -151,7 +151,7 @@ static union HTError HTParamReader_read_header(struct HTParamReader *self) {
                 state = StateEFBB;
                 break;
             }
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             HTStrBuf_push(&field, (char) ch);
             break;
         case '\xbf':
@@ -159,11 +159,11 @@ static union HTError HTParamReader_read_header(struct HTParamReader *self) {
                 state = StateField;
                 break;
             }
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             HTStrBuf_push(&field, (char) ch);
             break;
         case '\xef':
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             if (state == StateStart) {
                 state = StateEF;
                 break;
@@ -171,7 +171,7 @@ static union HTError HTParamReader_read_header(struct HTParamReader *self) {
             HTStrBuf_push(&field, (char) ch);
             break;
         default:
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             HTStrBuf_push(&field, (char) ch);
             if (state != StateQuote) {
                 state = StateField;
@@ -186,7 +186,7 @@ static union HTError HTParamReader_read_header(struct HTParamReader *self) {
     }
 }
 
-union HTError HTParamReader_read_row(struct HTParamReader *self) {
+union HTError HTCSVReader_read_row(struct HTCSVReader *self) {
     enum State state = StateStart;
     HTArray_clear(&self->line_buffer);
     struct HTStrBuf field = HTStrBuf_new();
@@ -195,21 +195,21 @@ union HTError HTParamReader_read_row(struct HTParamReader *self) {
         if (ch == EOF) {
             if (ferror_unlocked(self->file)) {
                 union HTError err = HTError_new_io(self->pos_row, self->pos_col, errno);
-                HTStrBuf_drop(&field);
+                HTStrBuf_free(&field);
                 HTArray_clear(&self->line_buffer);
                 return err;
             } else {
-                HTParamReader_push_pending_chars(&field, &state);
+                HTCSVReader_push_pending_chars(&field, &state);
                 if (state == StateStart) {
                     return HTError_new_end_of_file();
                 }
                 if (state == StateQuote) {
-                    HTStrBuf_drop(&field);
+                    HTStrBuf_free(&field);
                     HTArray_clear(&self->line_buffer);
                     return HTError_new_quote(self->pos_row, self->pos_col);
                 }
                 if (!HTArray_try_push(&self->line_buffer, field.buf, field.len, field.cap)) {
-                    HTStrBuf_drop(&field);
+                    HTStrBuf_free(&field);
                 }
                 return HTError_new_no_error();
             }
@@ -217,20 +217,20 @@ union HTError HTParamReader_read_row(struct HTParamReader *self) {
         switch ((char) ch) {
         case '\n':
             if (state != State0D) {
-                HTParamReader_push_pending_chars(&field, &state);
+                HTCSVReader_push_pending_chars(&field, &state);
             }
             if (state == StateQuote) {
                 HTStrBuf_push(&field, (char) ch);
                 break;
             }
             if (!HTArray_try_push(&self->line_buffer, field.buf, field.len, field.cap)) {
-                HTStrBuf_drop(&field);
+                HTStrBuf_free(&field);
             }
             self->pos_row++;
             self->pos_col = 0;
             return HTError_new_no_error();
         case '\r':
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
                 HTStrBuf_push(&field, (char) ch);
                 break;
@@ -238,7 +238,7 @@ union HTError HTParamReader_read_row(struct HTParamReader *self) {
             state = State0D;
             break;
         case '"':
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
                 state = StateQuoteEnd;
                 break;
@@ -249,19 +249,19 @@ union HTError HTParamReader_read_row(struct HTParamReader *self) {
             state = StateQuote;
             break;
         case ',':
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
                 HTStrBuf_push(&field, (char) ch);
                 break;
             }
             if (!HTArray_try_push(&self->line_buffer, field.buf, field.len, field.cap)) {
-                HTStrBuf_drop(&field);
+                HTStrBuf_free(&field);
             }
             field = HTStrBuf_new();
             state = StateField;
             break;
         default:
-            HTParamReader_push_pending_chars(&field, &state);
+            HTCSVReader_push_pending_chars(&field, &state);
             HTStrBuf_push(&field, (char) ch);
             if (state != StateQuote) {
                 state = StateField;
@@ -276,7 +276,7 @@ union HTError HTParamReader_read_row(struct HTParamReader *self) {
     }
 }
 
-bool HTParamReader_get(struct HTParamReader *self, const char *column, size_t column_len, struct HTStrView *out) {
+bool HTCSVReader_get_column_by_name(struct HTCSVReader *self, const char *column, size_t column_len, struct HTStrView *out) {
     size_t index;
     if (!HTHashmap_get(&self->column_index, &index, column, column_len)) {
         return false;

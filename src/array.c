@@ -34,16 +34,16 @@ struct HTArray HTArray_with_capacity(size_t cap) {
     return self;
 }
 
-void HTArray_drop(struct HTArray *self) {
+void HTArray_free(struct HTArray *self) {
     for (size_t i = 0; i < self->len; i++) {
-        HTString_drop(&self->data[i]);
+        HTString_free(&self->data[i]);
     }
     free(self->data);
 }
 
 void HTArray_clear(struct HTArray *self) {
     for (size_t i = 0; i < self->len; i++) {
-        HTString_drop(&self->data[i]);
+        HTString_free(&self->data[i]);
     }
     self->len = 0;
 }

@@ -12,7 +12,7 @@ struct HTArray {
 
 struct HTArray HTArray_new(void);
 struct HTArray HTArray_with_capacity(size_t cap);
-void HTArray_drop(struct HTArray *self);
+void HTArray_free(struct HTArray *self);
 void HTArray_clear(struct HTArray *self);
 void HTArray_push(struct HTArray *self, char *value, size_t value_len, size_t value_cap);
 bool HTArray_try_push(struct HTArray *self, char *value, size_t value_len, size_t value_cap);

@@ -7,10 +7,10 @@ static void check_error(HTError *err) {
         fputs("Error: ", stderr);
         HTError_print(err, stderr);
         fputc('\n', stderr);
-        HTError_drop(err);
+        HTError_free(err);
         exit(1);
     }
-    HTError_drop(err);
+    HTError_free(err);
 }
 
 int main(int argc, char *argv[]) {
@@ -19,19 +19,19 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
     FILE *file = fopen(argv[1], "rb");
-    HTParamReader *reader;
-    HTError err = HTParamReader_new(&reader, file);
+    HTCSVReader *reader;
+    HTError err = HTCSVReader_new(&reader, file);
     check_error(&err);
     for (;;) {
-        err = HTParamReader_read_row(reader);
+        err = HTCSVReader_read_row(reader);
         if (err.code == HTEndOfFile) {
-            HTError_drop(&err);
+            HTError_free(&err);
             break;
         }
         check_error(&err);
         for (int i = 2; i < argc; i++) {
             HTStrView str;
-            if (!HTParamReader_get(reader, argv[i], strlen(argv[i]), &str)) {
+            if (!HTCSVReader_get_column_by_name(reader, argv[i], strlen(argv[i]), &str)) {
                 str.buf = "(N/A)";
                 str.len = 5;
             }
@@ -44,6 +44,6 @@ int main(int argc, char *argv[]) {
         }
         fputc('\n', stdout);
     }
-    HTParamReader_drop(reader);
+    HTCSVReader_free(reader);
     return 0;
 }

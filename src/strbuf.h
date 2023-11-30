@@ -10,7 +10,7 @@ struct HTStrBuf {
 };
 
 struct HTStrBuf HTStrBuf_new(void);
-void HTStrBuf_drop(struct HTStrBuf *self);
+void HTStrBuf_free(struct HTStrBuf *self);
 void HTStrBuf_push(struct HTStrBuf *self, char ch);
 void HTStrBuf_shrink(struct HTStrBuf *self);
 
