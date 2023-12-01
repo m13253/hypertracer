@@ -11,9 +11,9 @@ struct HTHashmap {
 };
 
 struct HTHashmap_Entry {
-    bool valid;
     struct HTStrView key;
     size_t value;
+    bool valid;
 };
 
 struct HTHashmap HTHashmap_new(size_t num_elements);

@@ -1,6 +1,4 @@
 #include "strbuilder.h"
-#include <assert.h>
-#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 

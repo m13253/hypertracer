@@ -65,6 +65,18 @@ _Bool HTCsvReader_value_by_column_name(const struct HTCsvReader *self, struct HT
 void HTCsvReadError_free(struct HTCsvReadError *err);
 void HTCsvReadError_panic(const struct HTCsvReadError *err);
 
+struct HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, struct HTStrView *header, size_t num_columns);
+void HTCsvWriter_free(struct HTCsvWriter *self);
+void HTCsvWriter_set_string_by_column_index(struct HTCsvWriter *self, size_t column, char *value, size_t value_len, void (*value_free_func)(char *buf, void *extra), void *value_free_extra);
+void HTCsvWriter_set_strview_by_column_index(struct HTCsvWriter *self, size_t column, const char *value, size_t value_len);
+void HTCsvWriter_set_string_by_column_name(struct HTCsvWriter *self, const char *column, size_t column_len, char *value, size_t value_len, void (*value_free_func)(char *buf, void *extra), void *value_free_extra);
+void HTCsvWriter_set_strview_by_column_name(struct HTCsvWriter *self, const char *column, size_t column_len, const char *value, size_t value_len);
+
+static inline void HTCsvWriteError_free(struct HTCsvWriteError *err) {
+    (void) err;
+}
+void HTCsvWriteError_panic(struct HTCsvWriteError *err);
+
 #ifdef __cplusplus
 }
 #endif

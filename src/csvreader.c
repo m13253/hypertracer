@@ -5,6 +5,7 @@
 #include "strview.h"
 #include <errno.h>
 #include <hypetrace.h>
+#include <stdbool.h>
 #include <stdlib.h>
 
 enum State {

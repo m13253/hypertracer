@@ -1,16 +1,11 @@
 #include "csvwriter.h"
+#include <stdbool.h>
 #include <hypetrace.h>
 
-enum HTCsvWriterValueState {
-    StateEmpty,
-    StateOwned,
-    StateView,
-};
-
 struct HTCsvWriterValue {
-    enum HTCsvWriterValueState state;
-    union {
-        struct HTString owned;
-        struct HTStrView view;
-    };
+    char *buf;
+    size_t len;
+    void (*free_func)(char *buf, void *extra);
+    void *free_extra;
+    bool valid;
 };

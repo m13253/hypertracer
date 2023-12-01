@@ -2,6 +2,7 @@
 #define HT_CSVREAD_ERROR_H
 
 #include <hypetrace.h>
+#include <stddef.h>
 #include <stdint.h>
 
 static inline struct HTCsvReadError HTCsvReadError_new_no_error(void) {

@@ -1,6 +1,6 @@
 #include "hashmap.h"
 #include "siphash.h"
-#include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -58,10 +58,10 @@ size_t HTHashmap_try_set(struct HTHashmap *self, const char *key, size_t key_len
             hash = 0;
         }
     }
-    self->data[hash].valid = true;
     self->data[hash].key.buf = key;
     self->data[hash].key.len = key_len;
     self->data[hash].value = value;
+    self->data[hash].valid = true;
     return value;
 }
 

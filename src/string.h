@@ -1,7 +1,6 @@
 #ifndef HT_STRING_H
 #define HT_STRING_H
 
-#include <stdbool.h>
 #include <stddef.h>
 
 struct HTString {

@@ -1,7 +1,7 @@
 #include "array.h"
 #include "string.h"
-#include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 enum {
