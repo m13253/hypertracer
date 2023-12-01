@@ -1,5 +1,5 @@
 #include "csvwriter.h"
-#include "hypetrace.h"
+#include <hypetrace.h>
 
 enum HTCsvWriterValueState {
     StateEmpty,

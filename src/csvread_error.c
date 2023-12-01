@@ -1,8 +1,8 @@
 #define __STDC_WANT_LIB_EXT1__ 1
 #include "csvread_error.h"
 #include "strview.h"
-#include "hypetrace.h"
 #include <errno.h>
+#include <hypetrace.h>
 #include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,7 +43,7 @@ void HTCsvReadError_panic(const struct HTCsvReadError *err) {
         perror("CsvReadError");
         break;
     case HTErrQuoteNotClosed:
-        fprintf(stderr, "CsvReadError: quote not closed at Line %"PRIu64", Col %"PRIu64"\n", err->io.pos_row + 1, err->io.pos_col + 1);
+        fprintf(stderr, "CsvReadError: quote not closed at Line %" PRIu64 ", Col %" PRIu64 "\n", err->io.pos_row + 1, err->io.pos_col + 1);
     case HTErrColumnDuplicated: {
         fputs("column \"", stderr);
         fwrite(err->column.name.buf, 1, err->column.name.len, stderr);

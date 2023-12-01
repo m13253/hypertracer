@@ -1,10 +1,10 @@
 #include "csvreader.h"
 #include "csvread_error.h"
-#include "hypetrace.h"
 #include "strbuilder.h"
 #include "string.h"
 #include "strview.h"
 #include <errno.h>
+#include <hypetrace.h>
 #include <stdlib.h>
 
 enum State {
