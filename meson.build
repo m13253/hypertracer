@@ -7,6 +7,7 @@ sources = [
   'src/array.c',
   'src/csvread_error.c',
   'src/csvreader.c',
+  'src/csvwrite_error.c',
   'src/csvwriter.c',
   'src/hashmap.c',
   'src/hypetrace.c',
