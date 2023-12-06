@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 enum {
     HT_ARRAY_MIN_CAP = 4,
@@ -22,6 +23,7 @@ struct HTArray HTArray_with_capacity(size_t cap) {
         self.data = NULL;
     } else {
         if (cap > SIZE_MAX / sizeof self.data[0]) {
+            fprintf(stderr, "panic: HTArray_with_capacity: capacity %zu is too large\n", cap);
             abort();
         }
         self.data = malloc(cap * sizeof self.data[0]);
@@ -54,6 +56,7 @@ static void HTArray_grow(struct HTArray *self) {
     } else {
         size_t limit = SIZE_MAX / sizeof self->data[0] - self->cap;
         if (limit == 0) {
+            fprintf(stderr, "panic: HTArray_grow: capacity %zu is too large\n", self->cap);
             abort();
         } else if (limit <= self->cap) {
             self->cap = SIZE_MAX / sizeof self->data[0];

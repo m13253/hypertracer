@@ -7,7 +7,6 @@
 struct HTCsvWriter {
     FILE *file;
     size_t num_columns;
-    struct HTStrView *head_buffer;
     struct HTCsvWriterValue *line_buffer;
     struct HTHashmap column_index;
 };

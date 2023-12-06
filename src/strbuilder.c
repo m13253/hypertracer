@@ -1,6 +1,7 @@
 #include "strbuilder.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 enum {
     HT_STR_BUILDER_MIN_CAP = 8,
@@ -24,6 +25,7 @@ static void HTStrBuilder_grow(struct HTStrBuilder *self) {
     } else {
         size_t limit = SIZE_MAX - self->cap;
         if (limit == 0) {
+            fprintf(stderr, "panic: HTStrBuilder_grow: capacity %zu is too large\n", self->cap);
             abort();
         } else if (limit <= self->cap) {
             self->cap = SIZE_MAX;

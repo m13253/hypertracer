@@ -1,19 +1,12 @@
 #ifndef HT_HASHMAP_H
 #define HT_HASHMAP_H
 
-#include <hypetrace.h>
 #include <stdbool.h>
 #include <stddef.h>
 
 struct HTHashmap {
-    struct HTHashmap_Entry *data;
+    struct HTHashmapEntry *data;
     size_t num_buckets;
-};
-
-struct HTHashmap_Entry {
-    struct HTStrView key;
-    size_t value;
-    bool valid;
 };
 
 struct HTHashmap HTHashmap_new(size_t num_elements);

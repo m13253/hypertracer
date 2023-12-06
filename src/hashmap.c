@@ -1,13 +1,22 @@
 #include "hashmap.h"
 #include "siphash.h"
+#include <hypetrace.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+struct HTHashmapEntry {
+    struct HTStrView key;
+    size_t value;
+    bool valid;
+};
 
 struct HTHashmap HTHashmap_new(size_t num_elements) {
     struct HTHashmap self;
     size_t limit = SIZE_MAX - num_elements;
     if (limit == 0) {
+        fprintf(stderr, "panic: HTHashmap_new: size %zu is too large\n", num_elements);
         abort();
     } else if (limit <= num_elements / 3) {
         self.num_buckets = SIZE_MAX;
