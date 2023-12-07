@@ -1,7 +1,11 @@
 #include <cerrno>
+#include <cstdio>
 #include <filesystem>
 #include <format>
 #include <hypetrace>
+#include <optional>
+#include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>

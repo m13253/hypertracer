@@ -10,13 +10,17 @@ sources = [
   'src/csvwrite_error.c',
   'src/csvwriter.c',
   'src/hashmap.c',
-  'src/hypetrace.cpp',
   'src/siphash.c',
   'src/strbuilder.c',
   'src/string.c',
 ]
 
 lib = static_library('hypetrace', sources,
+  install : true,
+  include_directories : 'include',
+  gnu_symbol_visibility : 'hidden',
+)
+lib_cpp = static_library('hypetrace_cpp', 'src/hypetrace.cpp',
   install : true,
   include_directories : 'include',
   gnu_symbol_visibility : 'hidden',
@@ -31,6 +35,11 @@ hypetrace_dep = declare_dependency(
   include_directories : include_directories('include'),
   link_with : lib
 )
+hypetrace_cpp_dep = declare_dependency(
+  include_directories : include_directories('include'),
+  dependencies : hypetrace_dep,
+  link_with : lib_cpp
+)
 
 pkg_mod = import('pkgconfig')
 pkg_mod.generate(
@@ -39,6 +48,14 @@ pkg_mod.generate(
   description : 'A tracing & instrumenting library for HPC kernel tuning',
   subdirs : 'hypetrace',
   libraries : lib,
+  version : '0.1',
+)
+pkg_mod.generate(
+  name : 'hypetrace_cpp',
+  filebase : 'hypetrace_cpp',
+  description : 'A tracing & instrumenting library for HPC kernel tuning',
+  subdirs : 'hypetrace',
+  libraries : lib_cpp,
   version : '0.1',
 )
 
