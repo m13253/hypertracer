@@ -1,4 +1,5 @@
 #include <hypetrace.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,10 +18,22 @@ int main(int argc, char *argv[]) {
     }
 
     size_t num_columns = HTCsvReader_num_columns(reader);
+    size_t actual_num_columns = 0;
+    size_t num_empty_columns = 0;
     HTStrView *column_names = alloca(num_columns * sizeof column_names[0]);
     for (size_t i = 0; i < num_columns; i++) {
-        column_names[i] = HTCsvReader_column_name_by_index(reader, i);
+        column_names[actual_num_columns] = HTCsvReader_column_name_by_index(reader, i);
+        // We want at most one empty column
+        if (column_names[actual_num_columns].len == 0) {
+            if (num_empty_columns == 0) {
+                actual_num_columns++;
+            }
+            num_empty_columns++;
+        } else {
+            actual_num_columns++;
+        }
     }
+    num_columns = actual_num_columns;
 
     FILE *fo = fopen(argv[2], "wb");
     HTCsvWriter *writer;
@@ -42,7 +55,7 @@ int main(int argc, char *argv[]) {
         }
         for (size_t i = 0; i < num_columns; i++) {
             HTStrView str;
-            if(!HTCsvReader_value_by_column_name(reader, &str, column_names[i].buf, column_names[i].len)) {
+            if (!HTCsvReader_value_by_column_name(reader, &str, column_names[i].buf, column_names[i].len)) {
                 abort();
             }
             char *dup = malloc(str.len);
