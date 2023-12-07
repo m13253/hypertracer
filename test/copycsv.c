@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
     size_t num_columns = HTCsvReader_num_columns(reader);
     size_t actual_num_columns = 0;
     size_t num_empty_columns = 0;
-    HTStrView *column_names = alloca(num_columns * sizeof column_names[0]);
+    HTStrView *column_names = calloc(num_columns, sizeof column_names[0]);
     for (size_t i = 0; i < num_columns; i++) {
         column_names[actual_num_columns] = HTCsvReader_column_name_by_index(reader, i);
         // We want at most one empty column
@@ -68,6 +68,7 @@ int main(int argc, char *argv[]) {
             HTCsvWriteError_free(&err);
         }
     }
+    free(column_names);
     HTCsvReader_free(reader);
     fclose(fi);
     HTCsvWriter_free(writer);

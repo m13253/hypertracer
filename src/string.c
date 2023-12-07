@@ -9,11 +9,12 @@ struct HTString HTString_from_HTStrBuilder(char *buf, size_t len, size_t cap) {
     } else if (len == cap) {
         self.buf = buf;
     } else {
-        self.buf = realloc(buf, len);
-        if (!self.buf) {
+        char *new_buf = realloc(buf, len);
+        if (!new_buf) {
             free(buf);
             abort();
         }
+        self.buf = new_buf;
     }
     self.len = len;
     return self;
