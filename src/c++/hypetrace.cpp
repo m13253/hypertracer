@@ -1,11 +1,11 @@
 #include <cerrno>
 #include <cstdio>
 #include <filesystem>
-#include <format>
 #include <hypetrace.h>
 #include <hypetrace>
 #include <optional>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -169,17 +169,23 @@ static void HTCsvReadError_throw(HTCsvReadError &err) {
         throw exception;
     }
     case HTErrQuoteNotClosed: {
-        auto exception = std::runtime_error(std::format("quote not closed at Line {}, Col {}"sv, err.io.pos_row + 1, err.io.pos_col + 1));
+        std::ostringstream ss;
+        ss << "quote not closed at Line "sv << (err.io.pos_row + 1) << ", Col "sv << (err.io.pos_col + 1);
+        auto exception = std::runtime_error(ss.str());
         HTCsvReadError_free(&err);
         throw exception;
     }
     case HTErrColumnDuplicated: {
-        auto exception = std::runtime_error(std::format("column \"{}\" duplicated at both #{} and #{}\n"sv, std::string_view(err.column.name.buf, err.column.name.len), err.column.index_a, err.column.index_b));
+        std::ostringstream ss;
+        ss << "column \""sv << std::string_view(err.column.name.buf, err.column.name.len) << "\" duplicated at both #"sv << err.column.index_a << " and #"sv << err.column.index_b;
+        auto exception = std::runtime_error(ss.str());
         HTCsvReadError_free(&err);
         throw exception;
     }
     default: {
-        auto exception = std::runtime_error(std::format("unknown error {}"sv, (int) err.code));
+        std::ostringstream ss;
+        ss << "unknown error "sv << (int) err.code;
+        auto exception = std::runtime_error(ss.str());
         HTCsvReadError_free(&err);
         throw exception;
     }
@@ -197,7 +203,9 @@ static void HTCsvWriteError_throw(HTCsvWriteError &err) {
         throw exception;
     }
     default: {
-        auto exception = std::runtime_error(std::format("unknown error {}"sv, (int) err.code));
+        std::ostringstream ss;
+        ss << "unknown error "sv << (int) err.code;
+        auto exception = std::runtime_error(ss.str());
         HTCsvWriteError_free(&err);
         throw exception;
     }
@@ -212,7 +220,9 @@ LogFile::LogFile(std::string_view prefix, unsigned num_retries) {
     log_file = new HTLogFile;
     if (!HTLogFile_new(log_file, prefix.data(), prefix.length(), num_retries)) {
         delete log_file;
-        throw std::runtime_error(std::format("failed to create a file with prefix \"{}\" after {} retries", prefix, num_retries));
+        std::ostringstream ss;
+        ss << "failed to create a file with prefix \""sv << prefix << "\" after "sv << num_retries << " retries"sv;
+        throw std::runtime_error(ss.str());
     }
 }
 

@@ -1,6 +1,5 @@
 #include <cstdlib>
 #include <filesystem>
-#include <format>
 #include <hypetrace>
 #include <iostream>
 #include <string_view>
@@ -10,7 +9,7 @@ using namespace std::literals;
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
-        std::cout << std::format("Usage {} INPUT.csv OUTPUT.csv\n"sv, argv[0]);
+        std::cout << "Usage "sv << argv[0] << " INPUT.csv OUTPUT.csv"sv << std::endl;
         std::exit(1);
     }
     auto reader = ht::CsvReader(std::filesystem::path(argv[1]));
@@ -38,13 +37,13 @@ int main(int argc, char *argv[]) {
         {
             bool eof;
             reader.read_row(eof);
-            if(eof) {
+            if (eof) {
                 break;
             }
         }
         for (const auto &i : column_names) {
             auto str = reader.value_by_column_name(i);
-            if(!str) {
+            if (!str) {
                 std::abort();
             }
             writer.set_string_by_column_name(i, std::string(*str));
