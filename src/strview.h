@@ -1,8 +1,8 @@
 #ifndef HT_STRVIEW_H
 #define HT_STRVIEW_H
 
-#include <stddef.h>
 #include <hypetrace.h>
+#include <stddef.h>
 
 static inline struct HTStrView HTStrView_new(void) {
     struct HTStrView result;

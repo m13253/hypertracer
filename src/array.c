@@ -2,8 +2,8 @@
 #include "string.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 enum {
     HT_ARRAY_MIN_CAP = 4,
