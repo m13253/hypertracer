@@ -1,6 +1,6 @@
 #include "hashmap.h"
 #include "siphash.h"
-#include <hypetrace.h>
+#include <hypertracer.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

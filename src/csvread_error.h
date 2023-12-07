@@ -1,7 +1,7 @@
 #ifndef HT_CSVREAD_ERROR_H
 #define HT_CSVREAD_ERROR_H
 
-#include <hypetrace.h>
+#include <hypertracer.h>
 #include <stddef.h>
 #include <stdint.h>
 

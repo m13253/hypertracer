@@ -1,5 +1,5 @@
-#ifndef HYPETRACE_H
-#define HYPETRACE_H
+#ifndef HYPERTRACER_H
+#define HYPERTRACER_H
 
 #include <stddef.h>
 #include <stdint.h>

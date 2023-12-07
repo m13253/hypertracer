@@ -1,8 +1,8 @@
 #include <cerrno>
 #include <cstdio>
 #include <filesystem>
-#include <hypetrace.h>
-#include <hypetrace>
+#include <hypertracer.h>
+#include <hypertracer>
 #include <optional>
 #include <span>
 #include <sstream>

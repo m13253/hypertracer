@@ -1,4 +1,4 @@
-project('hypetrace', ['c', 'cpp'],
+project('hypertracer', ['c', 'cpp'],
   version : '0.1',
   default_options : ['warning_level=3', 'c_std=c17', 'cpp_std=c++20']
 )
@@ -17,46 +17,46 @@ sources = [
   'src/tracer.c',
 ]
 
-lib = static_library('hypetrace', sources,
+lib = static_library('hypertracer', sources,
   install : true,
   include_directories : 'include',
   gnu_symbol_visibility : 'hidden',
 )
-lib_cpp = static_library('hypetrace_c++', 'src/c++/hypetrace.cpp',
+lib_cpp = static_library('hypertracer_c++', 'src/c++/hypertracer.cpp',
   install : true,
   include_directories : 'include',
   gnu_symbol_visibility : 'hidden',
 )
 install_headers(
-  'include/hypetrace',
-  'include/hypetrace.h',
-  subdir : 'hypetrace'
+  'include/hypertracer',
+  'include/hypertracer.h',
+  subdir : 'hypertracer'
 )
 
-hypetrace_dep = declare_dependency(
+hypertracer_dep = declare_dependency(
   include_directories : include_directories('include'),
   link_with : lib
 )
-hypetrace_cpp_dep = declare_dependency(
+hypertracer_cpp_dep = declare_dependency(
   include_directories : include_directories('include'),
-  dependencies : hypetrace_dep,
+  dependencies : hypertracer_dep,
   link_with : lib_cpp
 )
 
 pkg_mod = import('pkgconfig')
 pkg_mod.generate(
-  name : 'hypetrace',
-  filebase : 'hypetrace',
-  description : 'A tracing & instrumenting library for HPC kernel tuning',
-  subdirs : 'hypetrace',
+  name : 'hypertracer',
+  filebase : 'hypertracer',
+  description : 'A tracing library for HPC kernel tuning & performance',
+  subdirs : 'hypertracer',
   libraries : lib,
   version : '0.1',
 )
 pkg_mod.generate(
-  name : 'hypetrace_c++',
-  filebase : 'hypetrace_c++',
-  description : 'A tracing & instrumenting library for HPC kernel tuning',
-  subdirs : 'hypetrace',
+  name : 'hypertracer_c++',
+  filebase : 'hypertracer_c++',
+  description : 'A tracing library for HPC kernel tuning & performance',
+  subdirs : 'hypertracer',
   libraries : lib_cpp,
   version : '0.1',
 )

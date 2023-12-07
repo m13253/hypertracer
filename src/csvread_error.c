@@ -1,7 +1,7 @@
 #include "csvread_error.h"
 #include "strview.h"
 #include <errno.h>
-#include <hypetrace.h>
+#include <hypertracer.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>

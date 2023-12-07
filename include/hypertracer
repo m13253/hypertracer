@@ -1,5 +1,5 @@
-#ifndef HYPETRACE_
-#define HYPETRACE_
+#ifndef HYPERTRACER_
+#define HYPERTRACER_
 
 #include <cstddef>
 #include <filesystem>

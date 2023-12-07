@@ -1,7 +1,7 @@
 #ifndef HT_CSVWRITE_ERROR_H
 #define HT_CSVWRITE_ERROR_H
 
-#include <hypetrace.h>
+#include <hypertracer.h>
 
 static inline union HTCsvWriteError HTCsvWriteError_new_no_error(void) {
     union HTCsvWriteError err;

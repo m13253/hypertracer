@@ -1,4 +1,4 @@
-#include <hypetrace.h>
+#include <hypertracer.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>

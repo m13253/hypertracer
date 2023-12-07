@@ -1,7 +1,7 @@
 copycsv = executable('copycsv', 'copycsv.c',
-  dependencies : [hypetrace_dep]
+  dependencies : [hypertracer_dep]
 )
 
 copycsv_cpp = executable('copycsv_c++', 'copycsv_c++.cpp',
-  dependencies : [hypetrace_cpp_dep]
+  dependencies : [hypertracer_cpp_dep]
 )

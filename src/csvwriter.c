@@ -3,7 +3,7 @@
 #include "csvwriter.h"
 #include "csvwrite_error.h"
 #include <errno.h>
-#include <hypetrace.h>
+#include <hypertracer.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>

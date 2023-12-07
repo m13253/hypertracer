@@ -6,7 +6,7 @@
 #include "string.h"
 #include "strview.h"
 #include <errno.h>
-#include <hypetrace.h>
+#include <hypertracer.h>
 #include <stdbool.h>
 #include <stdlib.h>
 

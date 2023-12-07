@@ -1,6 +1,6 @@
 #include <cstdlib>
 #include <filesystem>
-#include <hypetrace>
+#include <hypertracer>
 #include <iostream>
 #include <string_view>
 #include <vector>
