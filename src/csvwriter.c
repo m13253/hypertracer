@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include "csvwriter.h"
 #include "csvwrite_error.h"
 #include <errno.h>
@@ -6,6 +8,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(__APPLE__) && !defined(fflush_unlocked)
+#define fflush_unlocked fflush
+#endif
 
 struct HTCsvWriterValue {
     char *buf;
@@ -113,7 +119,7 @@ union HTCsvWriteError HTCsvWriter_write_row(struct HTCsvWriter *self) {
             return HTCsvWriteError_new_io(errno);
         }
     }
-    if (fflush(self->file) == EOF) {
+    if (fflush_unlocked(self->file) == EOF) {
         HTCsvWriter_free_line_buffer(self);
         return HTCsvWriteError_new_io(errno);
     }

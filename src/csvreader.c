@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include "csvreader.h"
 #include "csvread_error.h"
 #include "strbuilder.h"
