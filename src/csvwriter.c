@@ -66,6 +66,7 @@ static void HTCsvWriter_free_line_buffer(struct HTCsvWriter *self) {
 }
 
 void HTCsvWriter_free(struct HTCsvWriter *self) {
+    fclose(self->file);
     HTCsvWriter_free_line_buffer(self);
     free(self->line_buffer);
     HTHashmap_free(&self->column_index);
@@ -73,7 +74,7 @@ void HTCsvWriter_free(struct HTCsvWriter *self) {
 }
 
 static struct HTCsvWriteError HTCsvWriter_write_header(struct HTCsvWriter *self) {
-    const char utf8_mark[3] = {'\xef', '\xbf', '\xbb'};
+    const char utf8_mark[3] = {'\xef', '\xbb', '\xbf'};
     for (size_t i = 0; i < 3; i++) {
         if (putc_unlocked(utf8_mark[i], self->file) == EOF) {
             return HTCsvWriteError_new_io(errno);
@@ -108,6 +109,10 @@ struct HTCsvWriteError HTCsvWriter_write_row(struct HTCsvWriter *self) {
             HTCsvWriter_free_line_buffer(self);
             return HTCsvWriteError_new_io(errno);
         }
+    }
+    if (fflush(self->file) == EOF) {
+        HTCsvWriter_free_line_buffer(self);
+        return HTCsvWriteError_new_io(errno);
     }
     HTCsvWriter_free_line_buffer(self);
     return HTCsvWriteError_new_no_error();

@@ -1,3 +1,3 @@
-csv_reader = executable('csv_reader', 'csv_reader.c',
+csv_reader = executable('copycsv', 'copycsv.c',
   dependencies : [hypetrace_dep]
 )
