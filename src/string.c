@@ -11,6 +11,7 @@ struct HTString HTString_from_HTStrBuilder(char *buf, size_t len, size_t cap) {
     } else {
         self.buf = realloc(buf, len);
         if (!self.buf) {
+            free(buf);
             abort();
         }
     }

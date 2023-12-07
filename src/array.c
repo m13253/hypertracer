@@ -64,10 +64,12 @@ static void HTArray_grow(struct HTArray *self) {
             self->cap *= 2;
         }
     }
-    self->data = realloc(self->data, self->cap * sizeof self->data[0]);
-    if (!self->data) {
+    struct HTString *data = realloc(self->data, self->cap * sizeof self->data[0]);
+    if (!data) {
+        free(self->data);
         abort();
     }
+    self->data = data;
 }
 
 void HTArray_push(struct HTArray *self, char *value, size_t value_len, size_t value_cap) {
@@ -96,9 +98,11 @@ void HTArray_shrink(struct HTArray *self) {
         free(self->data);
         self->data = NULL;
     } else {
-        self->data = realloc(self->data, self->cap * sizeof self->data[0]);
-        if (!self->data) {
+        struct HTString *data = realloc(self->data, self->cap * sizeof self->data[0]);
+        if (!data) {
+            free(self->data);
             abort();
         }
+        self->data = data;
     }
 }

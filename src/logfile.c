@@ -1,5 +1,6 @@
 #include <hypetrace.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,7 +19,7 @@ HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_l
         }
     }
 
-    const char *filename = malloc(prefix_len + suffix_max_len + 1);
+    char *filename = malloc(prefix_len + suffix_max_len + 1);
     if (!filename) {
         abort();
     }
@@ -27,6 +28,7 @@ HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_l
     time_t timer = time(NULL);
     if (timer == (time_t) -1) {
         fputs("panic: HTLogFile_new: failed to get current date and time\n", stderr);
+        free(filename);
         abort();
     }
     while (num_retries-- != 0) {
@@ -34,6 +36,7 @@ HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_l
         struct tm *ptm = gmtime_r(&timer, &tm);
         if (ptm == NULL) {
             fputs("panic: HTLogFile_new: failed to get current date and time\n", stderr);
+            free(filename);
             abort();
         }
         size_t suffix_len = strftime(&filename[prefix_len], suffix_max_len + 1, "_%Y-%m-%dT%H-%M-%SZ.csv", ptm);

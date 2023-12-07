@@ -1,7 +1,7 @@
 #include "strbuilder.h"
 #include <stdint.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 enum {
     HT_STR_BUILDER_MIN_CAP = 8,
@@ -33,10 +33,12 @@ static void HTStrBuilder_grow(struct HTStrBuilder *self) {
             self->cap *= 2;
         }
     }
-    self->buf = realloc(self->buf, self->cap);
-    if (!self->buf) {
+    char *buf = realloc(self->buf, self->cap);
+    if (!buf) {
+        free(self->buf);
         abort();
     }
+    self->buf = buf;
 }
 
 void HTStrBuilder_push(struct HTStrBuilder *self, char ch) {

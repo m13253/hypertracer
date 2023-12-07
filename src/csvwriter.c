@@ -29,6 +29,7 @@ union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, stru
     self->num_columns = num_columns;
     self->line_buffer = calloc(num_columns, sizeof self->line_buffer[0]);
     if (!self->line_buffer) {
+        free(self);
         abort();
     }
     self->column_index = HTHashmap_new(num_columns);
@@ -41,6 +42,9 @@ union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, stru
     for (size_t i = 0; i < num_columns; i++) {
         if (HTHashmap_try_set(&self->column_index, header[i].buf, header[i].len, i) != i) {
             fputs("panic: HTCsvWriter_new: duplicate column names\n", stderr);
+            free(self->line_buffer);
+            HTHashmap_free(&self->column_index);
+            free(self);
             abort();
         };
     }
