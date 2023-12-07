@@ -45,13 +45,13 @@ int main(int argc, char *argv[]) {
 
     for (;;) {
         {
-            HTCsvReadError err = HTCsvReader_read_row(reader);
-            if (err.code == HTEndOfFile) {
-                HTCsvReadError_free(&err);
-                break;
-            }
+            bool eof;
+            HTCsvReadError err = HTCsvReader_read_row(reader, &eof);
             HTCsvReadError_panic(&err);
             HTCsvReadError_free(&err);
+            if (eof) {
+                break;
+            }
         }
         for (size_t i = 0; i < num_columns; i++) {
             HTStrView str;
@@ -69,6 +69,8 @@ int main(int argc, char *argv[]) {
         }
     }
     HTCsvReader_free(reader);
+    fclose(fi);
     HTCsvWriter_free(writer);
+    fclose(fo);
     return 0;
 }

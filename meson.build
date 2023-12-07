@@ -1,4 +1,4 @@
-project('hypetrace', 'c',
+project('hypetrace', ['c', 'cpp'],
   version : '0.1',
   default_options : ['warning_level=3', 'c_std=c17', 'cpp_std=c++20']
 )
@@ -10,7 +10,7 @@ sources = [
   'src/csvwrite_error.c',
   'src/csvwriter.c',
   'src/hashmap.c',
-  'src/hypetrace.c',
+  'src/hypetrace.cpp',
   'src/siphash.c',
   'src/strbuilder.c',
   'src/string.c',
@@ -21,7 +21,9 @@ lib = static_library('hypetrace', sources,
   include_directories : 'include',
   gnu_symbol_visibility : 'hidden',
 )
-install_headers('include/hypetrace.h',
+install_headers(
+  'include/hypetrace',
+  'include/hypetrace.h',
   subdir : 'hypetrace'
 )
 

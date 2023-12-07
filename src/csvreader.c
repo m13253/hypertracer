@@ -18,9 +18,9 @@ enum State {
     State0D,
 };
 
-static struct HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self);
+static union HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self);
 
-struct HTCsvReadError HTCsvReader_new(struct HTCsvReader **out, FILE *file) {
+union HTCsvReadError HTCsvReader_new(struct HTCsvReader **out, FILE *file) {
     *out = malloc(sizeof **out);
     if (!*out) {
         abort();
@@ -30,7 +30,7 @@ struct HTCsvReadError HTCsvReader_new(struct HTCsvReader **out, FILE *file) {
     self->file = file;
     self->pos_row = 0;
     self->pos_col = 0;
-    struct HTCsvReadError err = HTCsvReader_read_header(self);
+    union HTCsvReadError err = HTCsvReader_read_header(self);
     if (err.code != HTNoError) {
         free(self);
         return err;
@@ -42,7 +42,7 @@ struct HTCsvReadError HTCsvReader_new(struct HTCsvReader **out, FILE *file) {
         const struct HTString *column = &self->head_buffer.data[i];
         size_t old_index = HTHashmap_try_set(&self->column_index, column->buf, column->len, i);
         if (old_index != i && column->len != 0) {
-            struct HTCsvReadError err = HTCsvReadError_new_column(column->buf, column->len, old_index, i);
+            union HTCsvReadError err = HTCsvReadError_new_column(column->buf, column->len, old_index, i);
             HTArray_free(&self->head_buffer);
             HTHashmap_free(&self->column_index);
             free(self);
@@ -54,7 +54,6 @@ struct HTCsvReadError HTCsvReader_new(struct HTCsvReader **out, FILE *file) {
 }
 
 void HTCsvReader_free(struct HTCsvReader *self) {
-    fclose(self->file);
     HTArray_free(&self->head_buffer);
     HTArray_free(&self->line_buffer);
     HTHashmap_free(&self->column_index);
@@ -80,7 +79,7 @@ static void HTCsvReader_push_pending_chars(struct HTStrBuilder *field, enum Stat
     }
 }
 
-static struct HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
+static union HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
     enum State state = StateStart;
     self->head_buffer = HTArray_new();
     struct HTStrBuilder field = HTStrBuilder_new();
@@ -88,7 +87,7 @@ static struct HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
         int ch = getc_unlocked(self->file);
         if (ch == EOF) {
             if (ferror_unlocked(self->file)) {
-                struct HTCsvReadError err = HTCsvReadError_new_io(self->pos_row, self->pos_col, errno);
+                union HTCsvReadError err = HTCsvReadError_new_io(self->pos_row, self->pos_col, errno);
                 HTStrBuilder_free(&field);
                 HTArray_free(&self->head_buffer);
                 return err;
@@ -190,7 +189,7 @@ static struct HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
     }
 }
 
-struct HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self) {
+union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, _Bool *eof) {
     enum State state = StateStart;
     HTArray_clear(&self->line_buffer);
     struct HTStrBuilder field = HTStrBuilder_new();
@@ -198,23 +197,27 @@ struct HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self) {
         int ch = getc_unlocked(self->file);
         if (ch == EOF) {
             if (ferror_unlocked(self->file)) {
-                struct HTCsvReadError err = HTCsvReadError_new_io(self->pos_row, self->pos_col, errno);
+                union HTCsvReadError err = HTCsvReadError_new_io(self->pos_row, self->pos_col, errno);
                 HTStrBuilder_free(&field);
                 HTArray_clear(&self->line_buffer);
+                *eof = false;
                 return err;
             } else {
                 HTCsvReader_push_pending_chars(&field, &state);
                 if (state == StateStart) {
-                    return HTCsvReadError_new_end_of_file();
+                    *eof = true;
+                    return HTCsvReadError_new_no_error();
                 }
                 if (state == StateQuote) {
                     HTStrBuilder_free(&field);
                     HTArray_clear(&self->line_buffer);
+                    *eof = false;
                     return HTCsvReadError_new_quote(self->pos_row, self->pos_col);
                 }
                 if (!HTArray_try_push(&self->line_buffer, field.buf, field.len, field.cap)) {
                     HTStrBuilder_free(&field);
                 }
+                *eof = false;
                 return HTCsvReadError_new_no_error();
             }
         }
@@ -232,6 +235,7 @@ struct HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self) {
             }
             self->pos_row++;
             self->pos_col = 0;
+            *eof = false;
             return HTCsvReadError_new_no_error();
         case '\r':
             HTCsvReader_push_pending_chars(&field, &state);

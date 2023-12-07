@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#ifdef __cplusplus
+#include <cstdbool>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,65 +27,74 @@ typedef struct HTStrView {
     size_t len;
 } HTStrView;
 
+typedef struct HTLogFile {
+    FILE *file;
+    struct HTStrView filename;
+} HTLogFile;
+
 typedef enum HTErrorCode {
     HTNoError,
-    HTEndOfFile,
     HTErrIO,
     HTErrQuoteNotClosed,
     HTErrColumnDuplicated,
 } HTErrorCode;
 
-typedef struct HTCsvReadError {
+typedef union HTCsvReadError {
     enum HTErrorCode code;
-    union {
-        struct {
-            uint64_t pos_row;
-            uint64_t pos_col;
-            int libc_errno;
-        } io;
-        struct {
-            uint64_t pos_row;
-            uint64_t pos_col;
-        } quote;
-        struct {
-            struct HTStrView name;
-            size_t index_a;
-            size_t index_b;
-        } column;
-    };
+    union HTCsvReadErrorIO {
+        enum HTErrorCode code;
+        uint64_t pos_row;
+        uint64_t pos_col;
+        int libc_errno;
+    } io;
+    union HTCsvReadErrorQuote {
+        enum HTErrorCode code;
+        uint64_t pos_row;
+        uint64_t pos_col;
+    } quote;
+    union HTCsvReadErrorColumn {
+        enum HTErrorCode code;
+        struct HTStrView name;
+        size_t index_a;
+        size_t index_b;
+    } column;
 } HTCsvReadError;
 
-typedef struct HTCsvWriteError {
+typedef union HTCsvWriteError {
     enum HTErrorCode code;
-    struct {
+    struct HTCsvWriteErrorIO {
+        enum HTErrorCode code;
         int libc_errno;
     } io;
 } HTCsvWriteError;
 
-struct HTCsvReadError HTCsvReader_new(struct HTCsvReader **out, FILE *file);
+union HTCsvReadError HTCsvReader_new(struct HTCsvReader **out, FILE *file);
 void HTCsvReader_free(struct HTCsvReader *self);
-struct HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self);
+union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, _Bool *eof);
 size_t HTCsvReader_num_columns(const struct HTCsvReader *self);
 struct HTStrView HTCsvReader_column_name_by_index(const struct HTCsvReader *self, size_t column);
 _Bool HTCsvReader_column_index_by_name(const struct HTCsvReader *self, size_t *out, const char *column, size_t column_len);
 struct HTStrView HTCsvReader_value_by_column_index(const struct HTCsvReader *self, size_t column);
 _Bool HTCsvReader_value_by_column_name(const struct HTCsvReader *self, struct HTStrView *out, const char *column, size_t column_len);
 
-void HTCsvReadError_free(struct HTCsvReadError *err);
-void HTCsvReadError_panic(const struct HTCsvReadError *err);
+void HTCsvReadError_free(union HTCsvReadError *err);
+void HTCsvReadError_panic(const union HTCsvReadError *err);
 
-struct HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, struct HTStrView *header, size_t num_columns);
+union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, struct HTStrView *header, size_t num_columns);
 void HTCsvWriter_free(struct HTCsvWriter *self);
 void HTCsvWriter_set_string_by_column_index(struct HTCsvWriter *self, size_t column, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param);
 void HTCsvWriter_set_strview_by_column_index(struct HTCsvWriter *self, size_t column, const char *value, size_t value_len);
-void HTCsvWriter_set_string_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, char *HT_restrict value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param);
+void HTCsvWriter_set_string_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param);
 void HTCsvWriter_set_strview_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, const char *HT_restrict value, size_t value_len);
-struct HTCsvWriteError HTCsvWriter_write_row(struct HTCsvWriter *self);
+union HTCsvWriteError HTCsvWriter_write_row(struct HTCsvWriter *self);
 
-static inline void HTCsvWriteError_free(struct HTCsvWriteError *err) {
+static inline void HTCsvWriteError_free(union HTCsvWriteError *err) {
     (void) err;
 }
-void HTCsvWriteError_panic(const struct HTCsvWriteError *err);
+void HTCsvWriteError_panic(const union HTCsvWriteError *err);
+
+struct HTLogFile HTLogFile_new(const char *prefix, size_t prefix_len, unsigned num_retries);
+void HTLogFile_free(struct HTLogFile *self);
 
 #ifdef __cplusplus
 }

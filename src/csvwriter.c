@@ -15,10 +15,10 @@ struct HTCsvWriterValue {
     bool valid;
 };
 
-static struct HTCsvWriteError HTCsvWriter_write_header(struct HTCsvWriter *self);
-static struct HTCsvWriteError HTCsvWriter_write_value(struct HTCsvWriter *self, const struct HTCsvWriterValue *value);
+static union HTCsvWriteError HTCsvWriter_write_header(struct HTCsvWriter *self);
+static union HTCsvWriteError HTCsvWriter_write_value(struct HTCsvWriter *self, const struct HTCsvWriterValue *value);
 
-struct HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, struct HTStrView *header, size_t num_columns) {
+union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, struct HTStrView *header, size_t num_columns) {
     *out = malloc(sizeof **out);
     if (!*out) {
         abort();
@@ -45,7 +45,7 @@ struct HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, str
         };
     }
 
-    struct HTCsvWriteError err = HTCsvWriter_write_header(self);
+    union HTCsvWriteError err = HTCsvWriter_write_header(self);
     if (err.code != HTNoError) {
         free(self->line_buffer);
         HTHashmap_free(&self->column_index);
@@ -66,14 +66,13 @@ static void HTCsvWriter_free_line_buffer(struct HTCsvWriter *self) {
 }
 
 void HTCsvWriter_free(struct HTCsvWriter *self) {
-    fclose(self->file);
     HTCsvWriter_free_line_buffer(self);
     free(self->line_buffer);
     HTHashmap_free(&self->column_index);
     free(self);
 }
 
-static struct HTCsvWriteError HTCsvWriter_write_header(struct HTCsvWriter *self) {
+static union HTCsvWriteError HTCsvWriter_write_header(struct HTCsvWriter *self) {
     const char utf8_mark[3] = {'\xef', '\xbb', '\xbf'};
     for (size_t i = 0; i < 3; i++) {
         if (putc_unlocked(utf8_mark[i], self->file) == EOF) {
@@ -83,10 +82,10 @@ static struct HTCsvWriteError HTCsvWriter_write_header(struct HTCsvWriter *self)
     return HTCsvWriter_write_row(self);
 }
 
-struct HTCsvWriteError HTCsvWriter_write_row(struct HTCsvWriter *self) {
+union HTCsvWriteError HTCsvWriter_write_row(struct HTCsvWriter *self) {
     for (size_t i = 0; i < self->num_columns; i++) {
         if (!self->line_buffer[i].valid) {
-            fprintf(stderr, "panic: HTCsvWriter_write_row: column #%zu is empty\n", i);
+            fprintf(stderr, "panic: HTCsvWriter_write_row: column #%zu is not set\n", i);
             abort();
         }
     }
@@ -97,7 +96,7 @@ struct HTCsvWriteError HTCsvWriter_write_row(struct HTCsvWriter *self) {
                 return HTCsvWriteError_new_io(errno);
             }
         }
-        struct HTCsvWriteError err = HTCsvWriter_write_value(self, &self->line_buffer[i]);
+        union HTCsvWriteError err = HTCsvWriter_write_value(self, &self->line_buffer[i]);
         if (err.code != HTNoError) {
             HTCsvWriter_free_line_buffer(self);
             return err;
@@ -118,7 +117,7 @@ struct HTCsvWriteError HTCsvWriter_write_row(struct HTCsvWriter *self) {
     return HTCsvWriteError_new_no_error();
 }
 
-static struct HTCsvWriteError HTCsvWriter_write_value(struct HTCsvWriter *self, const struct HTCsvWriterValue *value) {
+static union HTCsvWriteError HTCsvWriter_write_value(struct HTCsvWriter *self, const struct HTCsvWriterValue *value) {
     bool need_escaping = false;
     for (size_t i = 0; i < value->len; i++) {
         if (value->buf[i] == '\n' || value->buf[i] == '\r' || value->buf[i] == '"' || value->buf[i] == ',') {
@@ -181,7 +180,7 @@ static size_t HTCsvWriter_column_index_by_name(const struct HTCsvWriter *self, c
     return out;
 }
 
-void HTCsvWriter_set_string_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, char *HT_restrict value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param) {
+void HTCsvWriter_set_string_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param) {
     HTCsvWriter_set_string_by_column_index(self, HTCsvWriter_column_index_by_name(self, column, column_len), value, value_len, value_free_func, value_free_param);
 }
 

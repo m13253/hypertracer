@@ -1,0 +1,49 @@
+#ifndef HYPETRACE_
+#define HYPETRACE_
+
+#include <filesystem>
+#include <optional>
+#include <span>
+#include <string_view>
+
+struct HTCsvReader;
+struct HTCsvWriter;
+
+namespace ht {
+
+class CsvReader final {
+public:
+    CsvReader(const std::filesystem::path &path);
+    ~CsvReader();
+
+    void read_row(bool &eof);
+    size_t num_columns() const;
+    std::string_view column_name_by_index(size_t column) const;
+    std::optional<size_t> column_index_by_name(std::string_view column) const;
+    std::string_view value_by_column_index(size_t column) const;
+    std::optional<std::string_view> value_by_column_name(std::string_view column) const;
+
+private:
+    HTCsvReader *reader;
+    void *file;
+};
+
+class CsvWriter final {
+public:
+    CsvWriter(const std::filesystem::path &path, std::span<std::string_view> header);
+    ~CsvWriter();
+
+    void set_string_by_column_index(size_t column, std::string &&value);
+    void set_strview_by_column_index(size_t column, std::string_view value);
+    void set_string_by_column_name(std::string_view column, std::string &&value);
+    void set_strview_by_column_name(std::string_view column, std::string_view value);
+    void write_row();
+
+private:
+    HTCsvWriter *writer;
+    void *file;
+};
+
+} // namespace ht
+
+#endif
