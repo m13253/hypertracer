@@ -4,23 +4,24 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#ifdef __cplusplus
-#include <cstdbool>
-#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #ifdef __cplusplus
+#define HT_bool     bool
 #define HT_restrict __restrict
 #else
+#define HT_bool     _Bool
 #define HT_restrict restrict
 #endif
 
 typedef struct HTCsvReader HTCsvReader;
 
 typedef struct HTCsvWriter HTCsvWriter;
+
+typedef struct HTTracer HTTracer;
 
 typedef struct HTStrView {
     const char *buf;
@@ -70,12 +71,12 @@ typedef union HTCsvWriteError {
 
 union HTCsvReadError HTCsvReader_new(struct HTCsvReader **out, FILE *file);
 void HTCsvReader_free(struct HTCsvReader *self);
-union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, _Bool *eof);
+union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, HT_bool *eof);
 size_t HTCsvReader_num_columns(const struct HTCsvReader *self);
 struct HTStrView HTCsvReader_column_name_by_index(const struct HTCsvReader *self, size_t column);
-_Bool HTCsvReader_column_index_by_name(const struct HTCsvReader *self, size_t *out, const char *column, size_t column_len);
+HT_bool HTCsvReader_column_index_by_name(const struct HTCsvReader *self, size_t *out, const char *column, size_t column_len);
 struct HTStrView HTCsvReader_value_by_column_index(const struct HTCsvReader *self, size_t column);
-_Bool HTCsvReader_value_by_column_name(const struct HTCsvReader *self, struct HTStrView *out, const char *column, size_t column_len);
+HT_bool HTCsvReader_value_by_column_name(const struct HTCsvReader *self, struct HTStrView *out, const char *column, size_t column_len);
 
 void HTCsvReadError_free(union HTCsvReadError *err);
 void HTCsvReadError_panic(const union HTCsvReadError *err);
@@ -93,7 +94,7 @@ static inline void HTCsvWriteError_free(union HTCsvWriteError *err) {
 }
 void HTCsvWriteError_panic(const union HTCsvWriteError *err);
 
-struct HTLogFile HTLogFile_new(const char *prefix, size_t prefix_len, unsigned num_retries);
+HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_len, unsigned num_retries);
 void HTLogFile_free(struct HTLogFile *self);
 
 #ifdef __cplusplus

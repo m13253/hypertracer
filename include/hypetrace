@@ -8,6 +8,8 @@
 
 struct HTCsvReader;
 struct HTCsvWriter;
+struct HTLogFile;
+struct HTTracer;
 
 namespace ht {
 
@@ -31,6 +33,7 @@ private:
 class CsvWriter final {
 public:
     CsvWriter(const std::filesystem::path &path, std::span<std::string_view> header);
+    CsvWriter(const HTLogFile &log_file, std::span<std::string_view> header);
     ~CsvWriter();
 
     void set_string_by_column_index(size_t column, std::string &&value);
@@ -42,6 +45,17 @@ public:
 private:
     HTCsvWriter *writer;
     void *file;
+};
+
+class LogFile final {
+public:
+    LogFile(std::string_view prefix, unsigned num_retries = 10);
+    ~LogFile();
+private:
+    HTLogFile *log_file;
+};
+
+class Tracer final {
 };
 
 } // namespace ht

@@ -189,7 +189,7 @@ static union HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
     }
 }
 
-union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, _Bool *eof) {
+union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, HT_bool *eof) {
     enum State state = StateStart;
     HTArray_clear(&self->line_buffer);
     struct HTStrBuilder field = HTStrBuilder_new();
@@ -292,7 +292,7 @@ struct HTStrView HTCsvReader_column_name_by_index(const struct HTCsvReader *self
     return HTStrView_from_HTString(self->head_buffer.data[column].buf, self->head_buffer.data[column].len);
 }
 
-_Bool HTCsvReader_column_index_by_name(const struct HTCsvReader *self, size_t *out, const char *column, size_t column_len) {
+HT_bool HTCsvReader_column_index_by_name(const struct HTCsvReader *self, size_t *out, const char *column, size_t column_len) {
     return HTHashmap_get(&self->column_index, out, column, column_len);
 }
 
@@ -303,7 +303,7 @@ struct HTStrView HTCsvReader_value_by_column_index(const struct HTCsvReader *sel
     return HTStrView_from_HTString(self->line_buffer.data[column].buf, self->line_buffer.data[column].len);
 }
 
-_Bool HTCsvReader_value_by_column_name(const struct HTCsvReader *self, struct HTStrView *out, const char *column, size_t column_len) {
+HT_bool HTCsvReader_value_by_column_name(const struct HTCsvReader *self, struct HTStrView *out, const char *column, size_t column_len) {
     size_t index;
     if (!HTCsvReader_column_index_by_name(self, &index, column, column_len)) {
         return false;

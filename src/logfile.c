@@ -1,10 +1,11 @@
 #include <hypetrace.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-struct HTLogFile HTLogFile_new(const char *prefix, size_t prefix_len, unsigned num_retries) {
+HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_len, unsigned num_retries) {
     size_t suffix_max_len = sizeof "_0000-00-00T00-00-00Z.csv";
     if (prefix_len >= SIZE_MAX - suffix_max_len) {
         fputs("panic: HTLogFile_new: filename too long\n", stderr);
@@ -17,12 +18,11 @@ struct HTLogFile HTLogFile_new(const char *prefix, size_t prefix_len, unsigned n
         }
     }
 
-    struct HTLogFile self;
-    self.filename.buf = malloc(self.filename.len + 1);
-    if (!self.filename.buf) {
+    const char *filename = malloc(prefix_len + suffix_max_len + 1);
+    if (!filename) {
         abort();
     }
-    memcpy(self.filename.buf, prefix, prefix_len);
+    memcpy(filename, prefix, prefix_len);
 
     time_t timer = time(NULL);
     if (timer == (time_t) -1) {
@@ -36,18 +36,18 @@ struct HTLogFile HTLogFile_new(const char *prefix, size_t prefix_len, unsigned n
             fputs("panic: HTLogFile_new: failed to get current date and time\n", stderr);
             abort();
         }
-        size_t suffix_len = strftime(&self.filename.buf[prefix_len], suffix_max_len + 1, "_%Y-%m-%dT%H-%M-%SZ.csv", ptm);
-        self.file = fopen(self.filename.buf, "wxb");
-        if (self.file) {
-            self.filename.len = prefix_len + suffix_len;
-            return self;
+        size_t suffix_len = strftime(&filename[prefix_len], suffix_max_len + 1, "_%Y-%m-%dT%H-%M-%SZ.csv", ptm);
+        FILE *file = fopen(filename, "wxb");
+        if (file) {
+            out->file = file;
+            out->filename.buf = filename;
+            out->filename.len = prefix_len + suffix_len;
+            return true;
         }
         timer++;
     }
-    free((char *) self.filename.buf);
-    self.filename.buf = NULL;
-    self.filename.len = 0;
-    return self;
+    free(filename);
+    return false;
 }
 
 void HTLogFile_free(struct HTLogFile *self) {

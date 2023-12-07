@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <format>
+#include <hypetrace.h>
 #include <hypetrace>
 #include <optional>
 #include <span>
@@ -15,16 +16,11 @@
 #include <wchar.h>
 #endif
 
-#define _Bool bool
-#include <hypetrace.h>
-
 namespace ht {
 
 using namespace std::literals;
 
 static void HTCsvReadError_throw(HTCsvReadError &err);
-static void HTCsvWriteError_throw(HTCsvWriteError &err);
-static void HTCsvWriter_free_managed_string(void *param);
 
 CsvReader::CsvReader(const std::filesystem::path &path) {
 #ifdef WIN32
@@ -86,6 +82,10 @@ std::optional<std::string_view> CsvReader::value_by_column_name(std::string_view
     return std::nullopt;
 }
 
+static void HTCsvWriteError_throw(HTCsvWriteError &err);
+
+static std::vector<HTStrView> HTCsvWriter_header_to_vectors(std::span<std::string_view> header);
+
 CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_view> header) {
 #ifdef WIN32
     FILE *file = _wfopen(path.c_str(), L"wb");
@@ -98,14 +98,7 @@ CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_vi
         err.io.libc_errno = errno;
         HTCsvWriteError_throw(err);
     }
-    std::vector<HTStrView> header_vector;
-    header_vector.reserve(header.size());
-    for (const auto &i : header) {
-        header_vector.push_back(HTStrView{
-            .buf = i.data(),
-            .len = i.length()
-        });
-    }
+    auto header_vector = HTCsvWriter_header_to_vectors(header);
     auto err = HTCsvWriter_new(&writer, file, header_vector.data(), header_vector.size());
     if (err.code != HTNoError) {
         std::fclose(file);
@@ -114,10 +107,33 @@ CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_vi
     this->file = file;
 }
 
+CsvWriter::CsvWriter(const HTLogFile &log_file, std::span<std::string_view> header) :
+    file(nullptr) {
+    auto header_vector = HTCsvWriter_header_to_vectors(header);
+    auto err = HTCsvWriter_new(&writer, log_file.file, header_vector.data(), header_vector.size());
+    HTCsvWriteError_throw(err);
+}
+
+static std::vector<HTStrView> HTCsvWriter_header_to_vectors(std::span<std::string_view> header) {
+    std::vector<HTStrView> result;
+    result.reserve(header.size());
+    for (const auto &i : header) {
+        result.emplace_back(HTStrView{
+            .buf = i.data(),
+            .len = i.length()
+        });
+    }
+    return result;
+}
+
 CsvWriter::~CsvWriter() {
     HTCsvWriter_free(writer);
-    std::fclose(static_cast<FILE *>(file));
+    if (file) {
+        std::fclose(static_cast<FILE *>(file));
+    }
 }
+
+static void HTCsvWriter_free_managed_string(void *param);
 
 void CsvWriter::set_string_by_column_index(size_t column, std::string &&value) {
     std::string *managed_value = new std::string(std::move(value));
@@ -190,6 +206,19 @@ static void HTCsvWriteError_throw(HTCsvWriteError &err) {
 
 static void HTCsvWriter_free_managed_string(void *param) {
     delete static_cast<std::string *>(param);
+}
+
+LogFile::LogFile(std::string_view prefix, unsigned num_retries) {
+    log_file = new HTLogFile;
+    if (!HTLogFile_new(log_file, prefix.data(), prefix.length(), num_retries)) {
+        delete log_file;
+        throw std::runtime_error(std::format("failed to create a file with prefix \"{}\" after {} retries", prefix, num_retries));
+    }
+}
+
+LogFile::~LogFile() {
+    HTLogFile_free(log_file);
+    delete log_file;
 }
 
 } // namespace ht
