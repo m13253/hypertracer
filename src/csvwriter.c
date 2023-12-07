@@ -176,10 +176,10 @@ static size_t HTCsvWriter_column_index_by_name(const struct HTCsvWriter *self, c
     return out;
 }
 
-void HTCsvWriter_set_string_by_column_name(struct HTCsvWriter *self, const char *restrict column, size_t column_len, char *restrict value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param) {
+void HTCsvWriter_set_string_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, char *HT_restrict value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param) {
     HTCsvWriter_set_string_by_column_index(self, HTCsvWriter_column_index_by_name(self, column, column_len), value, value_len, value_free_func, value_free_param);
 }
 
-void HTCsvWriter_set_strview_by_column_name(struct HTCsvWriter *self, const char *restrict column, size_t column_len, const char *restrict value, size_t value_len) {
+void HTCsvWriter_set_strview_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, const char *HT_restrict value, size_t value_len) {
     HTCsvWriter_set_strview_by_column_index(self, HTCsvWriter_column_index_by_name(self, column, column_len), value, value_len);
 }
