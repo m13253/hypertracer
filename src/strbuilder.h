@@ -12,5 +12,6 @@ struct HTStrBuilder {
 struct HTStrBuilder HTStrBuilder_new(void);
 void HTStrBuilder_free(struct HTStrBuilder *self);
 void HTStrBuilder_push(struct HTStrBuilder *self, char ch);
+void HTStrBuilder_shrink(struct HTStrBuilder *self);
 
 #endif

@@ -11,14 +11,14 @@ union HTCsvReadError HTCsvReadError_new_column(const char *column_name, size_t c
     union HTCsvReadError err;
     err.code = HTErrColumnDuplicated;
     if (column_name_len == 0) {
-        err.column.name = HTStrView_new();
+        err.column.name = HTStrView_empty();
     } else {
         char *buf = malloc(column_name_len);
         if (!buf) {
             abort();
         }
         memcpy(buf, column_name, column_name_len);
-        err.column.name = HTStrView_from_HTString(buf, column_name_len);
+        err.column.name = HTStrView_new(buf, column_name_len);
     }
     err.column.index_a = index_a;
     err.column.index_b = index_b;

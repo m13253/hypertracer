@@ -1,5 +1,6 @@
 #include "array.h"
-#include "string.h"
+#include "strbuilder.h"
+#include "strview.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -38,14 +39,14 @@ struct HTArray HTArray_with_capacity(size_t cap) {
 
 void HTArray_free(struct HTArray *self) {
     for (size_t i = 0; i < self->len; i++) {
-        HTString_free(&self->data[i]);
+        free((char *) self->data[i].buf);
     }
     free(self->data);
 }
 
 void HTArray_clear(struct HTArray *self) {
     for (size_t i = 0; i < self->len; i++) {
-        HTString_free(&self->data[i]);
+        free((char *) self->data[i].buf);
     }
     self->len = 0;
 }
@@ -64,7 +65,7 @@ static void HTArray_grow(struct HTArray *self) {
             self->cap *= 2;
         }
     }
-    struct HTString *data = realloc(self->data, self->cap * sizeof self->data[0]);
+    struct HTStrView *data = realloc(self->data, self->cap * sizeof self->data[0]);
     if (!data) {
         free(self->data);
         abort();
@@ -72,19 +73,23 @@ static void HTArray_grow(struct HTArray *self) {
     self->data = data;
 }
 
-void HTArray_push(struct HTArray *self, char *value, size_t value_len, size_t value_cap) {
+void HTArray_push(struct HTArray *self, struct HTStrBuilder *str) {
     if (self->len == self->cap) {
         HTArray_grow(self);
     }
-    self->data[self->len] = HTString_from_HTStrBuilder(value, value_len, value_cap);
+    HTStrBuilder_shrink(str);
+    self->data[self->len].buf = str->buf;
+    self->data[self->len].len = str->len;
     self->len++;
 }
 
-bool HTArray_try_push(struct HTArray *self, char *value, size_t value_len, size_t value_cap) {
+bool HTArray_try_push(struct HTArray *self, struct HTStrBuilder *str) {
     if (self->len == self->cap) {
         return false;
     }
-    self->data[self->len] = HTString_from_HTStrBuilder(value, value_len, value_cap);
+    HTStrBuilder_shrink(str);
+    self->data[self->len].buf = str->buf;
+    self->data[self->len].len = str->len;
     self->len++;
     return true;
 }
@@ -98,7 +103,7 @@ void HTArray_shrink(struct HTArray *self) {
         free(self->data);
         self->data = NULL;
     } else {
-        struct HTString *data = realloc(self->data, self->cap * sizeof self->data[0]);
+        struct HTStrView *data = realloc(self->data, self->cap * sizeof self->data[0]);
         if (!data) {
             free(self->data);
             abort();

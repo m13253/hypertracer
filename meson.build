@@ -3,6 +3,15 @@ project('hypertracer', ['c', 'cpp'],
   default_options : ['warning_level=3', 'c_std=c17', 'cpp_std=c++20']
 )
 
+c11threads_dep = dependency('', required : false)
+if not meson.get_compiler('c').has_header('threads.h')
+  c11threads_dep = subproject('c11threads').get_variable('c11threads_dep')
+endif
+deps = [
+  c11threads_dep,
+  subproject('siphash').get_variable('siphash_dep'),
+]
+
 sources = [
   'src/array.c',
   'src/csvread_error.c',
@@ -11,7 +20,7 @@ sources = [
   'src/csvwriter.c',
   'src/hashmap.c',
   'src/logfile.c',
-  'src/siphash.c',
+  'src/mpsc.c',
   'src/strbuilder.c',
   'src/string.c',
   'src/tracer.c',
@@ -19,6 +28,7 @@ sources = [
 
 lib = static_library('hypertracer', sources,
   install : true,
+  dependencies : deps,
   include_directories : 'include',
   gnu_symbol_visibility : 'hidden',
 )

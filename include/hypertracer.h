@@ -28,6 +28,13 @@ typedef struct HTStrView {
     size_t len;
 } HTStrView;
 
+typedef struct HTString {
+    char *buf;
+    size_t len;
+    void (*free_func)(void *param);
+    void *free_param;
+} HTString;
+
 typedef struct HTLogFile {
     FILE *file;
     struct HTStrView filename;
@@ -81,7 +88,7 @@ HT_bool HTCsvReader_value_by_column_name(const struct HTCsvReader *self, struct 
 void HTCsvReadError_free(union HTCsvReadError *err);
 void HTCsvReadError_panic(const union HTCsvReadError *err);
 
-union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, struct HTStrView *header, size_t num_columns);
+union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, const struct HTStrView header[], size_t num_columns);
 void HTCsvWriter_free(struct HTCsvWriter *self);
 void HTCsvWriter_set_string_by_column_index(struct HTCsvWriter *self, size_t column, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param);
 void HTCsvWriter_set_strview_by_column_index(struct HTCsvWriter *self, size_t column, const char *value, size_t value_len);
@@ -94,8 +101,14 @@ static inline void HTCsvWriteError_free(union HTCsvWriteError *err) {
 }
 void HTCsvWriteError_panic(const union HTCsvWriteError *err);
 
+#define HT_LOG_FILE_DEFAULT_NUM_RETRIES 10
 HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_len, unsigned num_retries);
 void HTLogFile_free(struct HTLogFile *self);
+
+#define HT_TRACER_DEFAULT_BUFFER_NUM_ROWS 256
+union HTCsvWriteError HTTracer_new(struct HTTracer **out, FILE *file, size_t buffer_num_rows, const struct HTStrView header[], size_t num_str_columns);
+union HTCsvWriteError HTTracer_free(struct HTTracer *self);
+void HTTracer_write_row(struct HTTracer *self, struct HTString *columns[]);
 
 #ifdef __cplusplus
 }

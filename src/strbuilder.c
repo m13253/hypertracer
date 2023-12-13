@@ -48,3 +48,18 @@ void HTStrBuilder_push(struct HTStrBuilder *self, char ch) {
     self->buf[self->len] = ch;
     self->len++;
 }
+
+void HTStrBuilder_shrink(struct HTStrBuilder *self) {
+    if (self->len == 0) {
+        free(self->buf);
+        self->buf = NULL;
+    } else if (self->len != self->cap) {
+        char *buf = realloc(self->buf, self->len);
+        if (!buf) {
+            free(self->buf);
+            abort();
+        }
+        self->buf = buf;
+        self->cap = self->len;
+    }
+}

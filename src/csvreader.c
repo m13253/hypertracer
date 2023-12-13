@@ -41,7 +41,7 @@ union HTCsvReadError HTCsvReader_new(struct HTCsvReader **out, FILE *file) {
     size_t num_columns = HTCsvReader_num_columns(self);
     self->column_index = HTHashmap_new(num_columns);
     for (size_t i = 0; i < num_columns; i++) {
-        const struct HTString *column = &self->head_buffer.data[i];
+        const struct HTStrView *column = &self->head_buffer.data[i];
         size_t old_index = HTHashmap_try_set(&self->column_index, column->buf, column->len, i);
         if (old_index != i && column->len != 0) {
             union HTCsvReadError err = HTCsvReadError_new_column(column->buf, column->len, old_index, i);
@@ -103,7 +103,7 @@ static union HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
                     HTArray_free(&self->head_buffer);
                     return HTCsvReadError_new_quote(self->pos_row, self->pos_col);
                 }
-                HTArray_push(&self->head_buffer, field.buf, field.len, field.cap);
+                HTArray_push(&self->head_buffer, &field);
                 HTArray_shrink(&self->head_buffer);
                 return HTCsvReadError_new_no_error();
             }
@@ -117,7 +117,7 @@ static union HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
                 HTStrBuilder_push(&field, (char) ch);
                 break;
             }
-            HTArray_push(&self->head_buffer, field.buf, field.len, field.cap);
+            HTArray_push(&self->head_buffer, &field);
             HTArray_shrink(&self->head_buffer);
             self->pos_row++;
             self->pos_col = 0;
@@ -147,7 +147,7 @@ static union HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
                 HTStrBuilder_push(&field, (char) ch);
                 break;
             }
-            HTArray_push(&self->head_buffer, field.buf, field.len, field.cap);
+            HTArray_push(&self->head_buffer, &field);
             field = HTStrBuilder_new();
             state = StateField;
             break;
@@ -216,7 +216,7 @@ union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, HT_bool *eof
                     *eof = false;
                     return HTCsvReadError_new_quote(self->pos_row, self->pos_col);
                 }
-                if (!HTArray_try_push(&self->line_buffer, field.buf, field.len, field.cap)) {
+                if (!HTArray_try_push(&self->line_buffer, &field)) {
                     HTStrBuilder_free(&field);
                 }
                 *eof = false;
@@ -232,7 +232,7 @@ union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, HT_bool *eof
                 HTStrBuilder_push(&field, (char) ch);
                 break;
             }
-            if (!HTArray_try_push(&self->line_buffer, field.buf, field.len, field.cap)) {
+            if (!HTArray_try_push(&self->line_buffer, &field)) {
                 HTStrBuilder_free(&field);
             }
             self->pos_row++;
@@ -264,7 +264,7 @@ union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, HT_bool *eof
                 HTStrBuilder_push(&field, (char) ch);
                 break;
             }
-            if (!HTArray_try_push(&self->line_buffer, field.buf, field.len, field.cap)) {
+            if (!HTArray_try_push(&self->line_buffer, &field)) {
                 HTStrBuilder_free(&field);
             }
             field = HTStrBuilder_new();
@@ -291,7 +291,7 @@ size_t HTCsvReader_num_columns(const struct HTCsvReader *self) {
 }
 
 struct HTStrView HTCsvReader_column_name_by_index(const struct HTCsvReader *self, size_t column) {
-    return HTStrView_from_HTString(self->head_buffer.data[column].buf, self->head_buffer.data[column].len);
+    return HTStrView_new(self->head_buffer.data[column].buf, self->head_buffer.data[column].len);
 }
 
 HT_bool HTCsvReader_column_index_by_name(const struct HTCsvReader *self, size_t *out, const char *column, size_t column_len) {
@@ -300,9 +300,9 @@ HT_bool HTCsvReader_column_index_by_name(const struct HTCsvReader *self, size_t 
 
 struct HTStrView HTCsvReader_value_by_column_index(const struct HTCsvReader *self, size_t column) {
     if (column >= self->line_buffer.len) {
-        return HTStrView_new();
+        return HTStrView_empty();
     }
-    return HTStrView_from_HTString(self->line_buffer.data[column].buf, self->line_buffer.data[column].len);
+    return HTStrView_new(self->line_buffer.data[column].buf, self->line_buffer.data[column].len);
 }
 
 HT_bool HTCsvReader_value_by_column_name(const struct HTCsvReader *self, struct HTStrView *out, const char *column, size_t column_len) {

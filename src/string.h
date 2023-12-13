@@ -1,14 +1,8 @@
 #ifndef HT_STRING_H
 #define HT_STRING_H
 
-#include <stddef.h>
+struct HTString;
 
-struct HTString {
-    char *buf;
-    size_t len;
-};
-
-struct HTString HTString_from_HTStrBuilder(char *buf, size_t len, size_t cap);
-void HTString_free(struct HTString *self);
+void HTString_free(struct HTString *str);
 
 #endif

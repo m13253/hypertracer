@@ -2,6 +2,7 @@
 
 #include "csvwriter.h"
 #include "csvwrite_error.h"
+#include "string.h"
 #include <errno.h>
 #include <hypertracer.h>
 #include <stdbool.h>
@@ -14,17 +15,14 @@
 #endif
 
 struct HTCsvWriterValue {
-    char *buf;
-    size_t len;
-    void (*free_func)(void *param);
-    void *free_param;
+    struct HTString str;
     bool valid;
 };
 
 static union HTCsvWriteError HTCsvWriter_write_header(struct HTCsvWriter *self);
 static union HTCsvWriteError HTCsvWriter_write_value(struct HTCsvWriter *self, const struct HTCsvWriterValue *value);
 
-union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, struct HTStrView *header, size_t num_columns) {
+union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, const struct HTStrView header[], size_t num_columns) {
     *out = malloc(sizeof **out);
     if (!*out) {
         abort();
@@ -41,8 +39,8 @@ union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, stru
     self->column_index = HTHashmap_new(num_columns);
 
     for (size_t i = 0; i < num_columns; i++) {
-        self->line_buffer[i].buf = (char *) header[i].buf;
-        self->line_buffer[i].len = header[i].len;
+        self->line_buffer[i].str.buf = (char *) header[i].buf;
+        self->line_buffer[i].str.len = header[i].len;
         self->line_buffer[i].valid = true;
     }
     for (size_t i = 0; i < num_columns; i++) {
@@ -68,8 +66,8 @@ union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, stru
 
 static void HTCsvWriter_free_line_buffer(struct HTCsvWriter *self) {
     for (size_t i = 0; i < self->num_columns; i++) {
-        if (self->line_buffer[i].valid && self->line_buffer[i].free_func) {
-            self->line_buffer[i].free_func(self->line_buffer[i].free_param);
+        if (self->line_buffer[i].valid) {
+            HTString_free(&self->line_buffer[i].str);
         }
     }
     memset(self->line_buffer, 0, self->num_columns * sizeof self->line_buffer[0]);
@@ -129,8 +127,8 @@ union HTCsvWriteError HTCsvWriter_write_row(struct HTCsvWriter *self) {
 
 static union HTCsvWriteError HTCsvWriter_write_value(struct HTCsvWriter *self, const struct HTCsvWriterValue *value) {
     bool need_escaping = false;
-    for (size_t i = 0; i < value->len; i++) {
-        if (value->buf[i] == '\n' || value->buf[i] == '\r' || value->buf[i] == '"' || value->buf[i] == ',') {
+    for (size_t i = 0; i < value->str.len; i++) {
+        if (value->str.buf[i] == '\n' || value->str.buf[i] == '\r' || value->str.buf[i] == '"' || value->str.buf[i] == ',') {
             need_escaping = true;
         }
     }
@@ -139,11 +137,11 @@ static union HTCsvWriteError HTCsvWriter_write_value(struct HTCsvWriter *self, c
             return HTCsvWriteError_new_io(errno);
         }
     }
-    for (size_t i = 0; i < value->len; i++) {
-        if (putc_unlocked(value->buf[i], self->file) == EOF) {
+    for (size_t i = 0; i < value->str.len; i++) {
+        if (putc_unlocked(value->str.buf[i], self->file) == EOF) {
             return HTCsvWriteError_new_io(errno);
         }
-        if (value->buf[i] == '"') {
+        if (value->str.buf[i] == '"') {
             if (putc_unlocked('"', self->file) == EOF) {
                 return HTCsvWriteError_new_io(errno);
             }
@@ -162,10 +160,10 @@ void HTCsvWriter_set_string_by_column_index(struct HTCsvWriter *self, size_t col
         fprintf(stderr, "panic: HTCsvWriter_set_string_by_column_index: duplicate column #%zu\n", column);
         abort();
     }
-    self->line_buffer[column].buf = value;
-    self->line_buffer[column].len = value_len;
-    self->line_buffer[column].free_func = value_free_func;
-    self->line_buffer[column].free_param = value_free_param;
+    self->line_buffer[column].str.buf = value;
+    self->line_buffer[column].str.len = value_len;
+    self->line_buffer[column].str.free_func = value_free_func;
+    self->line_buffer[column].str.free_param = value_free_param;
     self->line_buffer[column].valid = true;
 }
 
@@ -174,8 +172,8 @@ void HTCsvWriter_set_strview_by_column_index(struct HTCsvWriter *self, size_t co
         fprintf(stderr, "panic: HTCsvWriter_set_strview_by_column_index: duplicate column #%zu\n", column);
         abort();
     }
-    self->line_buffer[column].buf = (char *) value;
-    self->line_buffer[column].len = value_len;
+    self->line_buffer[column].str.buf = (char *) value;
+    self->line_buffer[column].str.len = value_len;
     self->line_buffer[column].valid = true;
 }
 
