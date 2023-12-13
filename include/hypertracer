@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <variant>
 
 struct HTCsvReader;
 struct HTCsvWriter;
@@ -59,6 +60,17 @@ private:
 };
 
 class Tracer final {
+public:
+    Tracer(const std::filesystem::path &path, std::span<std::string_view> header, size_t buffer_num_rows = 4096);
+    Tracer(const HTLogFile &log_file, std::span<std::string_view> header, size_t buffer_num_rows = 4096);
+    ~Tracer();
+
+    void write_row(std::span<std::variant<std::string_view, std::string>> columns);
+
+private:
+    HTTracer *tracer;
+    void *file;
+    void *line_buffer;
 };
 
 } // namespace ht

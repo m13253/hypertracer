@@ -2,6 +2,7 @@
 #include "csvwrite_error.h"
 #include "mpsc.h"
 #include "strview.h"
+#include "string.h"
 #include <hypertracer.h>
 #include <inttypes.h>
 #include <stdatomic.h>
@@ -22,12 +23,12 @@ static int HTTracer_thread_start(void *param) {
         line_number++;
         char line_number_str[21]; // "18446744073709551615\0"
         int line_number_len = snprintf(line_number_str, sizeof line_number_str, "%" PRIu64, line_number);
-        if (line_number_len < 0 || line_number_len >= sizeof line_number_str) {
+        if (line_number_len < 0 || line_number_len >= (int) sizeof line_number_str) {
             fputs("panic: HTTracer_thread_start: failed to format line number\n", stderr);
             free(columns);
             abort();
         }
-        HTCsvWriter_set_strview_by_column_index(&self->csv_writer, 0, line_number_str, line_number_len);
+        HTCsvWriter_set_strview_by_column_index(self->csv_writer, 0, line_number_str, line_number_len);
 
         int64_t time_sec, time_nsec;
         if (time.tv_sec < 0 && time.tv_nsec != 0) {
@@ -39,21 +40,24 @@ static int HTTracer_thread_start(void *param) {
         }
         char time_str[42]; // "-9223372036854775808.-9223372036854775808\0"
         int time_len = snprintf(time_str, sizeof time_str, "%" PRId64 ".%09" PRId64, time_sec, time_nsec);
-        if (time_len < 0 || time_len >= sizeof time_str) {
+        if (time_len < 0 || time_len >= (int) sizeof time_str) {
             fputs("panic: HTTracer_thread_start: failed to format time\n", stderr);
             free(columns);
             abort();
         }
-        HTCsvWriter_set_strview_by_column_index(&self->csv_writer, 1, time_str, time_len);
+        HTCsvWriter_set_strview_by_column_index(self->csv_writer, 1, time_str, time_len);
 
         for (size_t i = 0; i < num_str_columns; i++) {
-            HTCsvWriter_set_string_by_column_index(&self->csv_writer, i + 2, columns[i].buf, columns[i].len, columns[i].free_func, columns[i].free_param);
+            HTCsvWriter_set_string_by_column_index(self->csv_writer, i + 2, columns[i].buf, columns[i].len, columns[i].free_func, columns[i].free_param);
         }
 
-        HTCsvWriteError err = HTCsvWriter_write_row(&self->csv_writer);
+        HTCsvWriteError err = HTCsvWriter_write_row(self->csv_writer);
         if (err.code != HTNoError) {
             self->err = err;
             while (HTMpsc_pop(&self->chan, &time, columns)) {
+                for (size_t i = 0; i < num_str_columns; i++) {
+                    HTString_free(&columns[i]);
+                }
             }
             break;
         }
@@ -63,7 +67,7 @@ static int HTTracer_thread_start(void *param) {
     return 0;
 }
 
-union HTCsvWriteError HTTracer_new(struct HTTracer **out, FILE *file, size_t buffer_num_rows, const struct HTStrView header[], size_t num_str_columns) {
+union HTCsvWriteError HTTracer_new(struct HTTracer **out, FILE *file, const struct HTStrView header[], size_t num_str_columns, size_t buffer_num_rows) {
     if (num_str_columns > SIZE_MAX - 2) {
         fprintf(stderr, "panic: HTTracer_new: too many columns %zu\n", num_str_columns);
         abort();
@@ -86,7 +90,7 @@ union HTCsvWriteError HTTracer_new(struct HTTracer **out, FILE *file, size_t buf
     HTCsvWriteError err = HTCsvWriter_new(&self->csv_writer, file, header_with_time, num_str_columns + 2);
     free(header_with_time);
     if (err.code != HTNoError) {
-        HTCsvWriter_free(&self->csv_writer);
+        HTCsvWriter_free(self->csv_writer);
         free(self);
         return err;
     }
@@ -95,7 +99,7 @@ union HTCsvWriteError HTTracer_new(struct HTTracer **out, FILE *file, size_t buf
     if (thrd_create(&self->write_thread, HTTracer_thread_start, self) != thrd_success) {
         fputs("panic: HTTracer_new: failed to create the writing thread\n", stderr);
         HTMpsc_free(&self->chan);
-        HTCsvWriter_free(&self->csv_writer);
+        HTCsvWriter_free(self->csv_writer);
         free(self);
         abort();
     }
@@ -109,11 +113,11 @@ union HTCsvWriteError HTTracer_free(struct HTTracer *self) {
         fputs("panic: HTTracer_free: failed to join the writing thread\n", stderr);
         abort();
     }
-    HTCsvWriter_free(&self->csv_writer);
+    HTCsvWriter_free(self->csv_writer);
     return self->err;
 }
 
-void HTTracer_write_row(struct HTTracer *self, struct HTString *columns[]) {
+void HTTracer_write_row(struct HTTracer *self, struct HTString columns[]) {
     struct timespec time;
     clock_gettime(CLOCK_MONOTONIC, &time);
     HTMpsc_push(&self->chan, &time, columns);

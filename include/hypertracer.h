@@ -105,10 +105,10 @@ void HTCsvWriteError_panic(const union HTCsvWriteError *err);
 HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_len, unsigned num_retries);
 void HTLogFile_free(struct HTLogFile *self);
 
-#define HT_TRACER_DEFAULT_BUFFER_NUM_ROWS 256
-union HTCsvWriteError HTTracer_new(struct HTTracer **out, FILE *file, size_t buffer_num_rows, const struct HTStrView header[], size_t num_str_columns);
+#define HT_TRACER_DEFAULT_BUFFER_NUM_ROWS 4096
+union HTCsvWriteError HTTracer_new(struct HTTracer **out, FILE *file, const struct HTStrView header[], size_t num_str_columns, size_t buffer_num_rows);
 union HTCsvWriteError HTTracer_free(struct HTTracer *self);
-void HTTracer_write_row(struct HTTracer *self, struct HTString *columns[]);
+void HTTracer_write_row(struct HTTracer *self, struct HTString columns[]);
 
 #ifdef __cplusplus
 }

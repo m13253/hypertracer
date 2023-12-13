@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <hypertracer.h>
 #include <hypertracer>
+#include <memory>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -11,7 +12,6 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
-#include <vector>
 #ifdef WIN32
 #include <wchar.h>
 #endif
@@ -84,7 +84,7 @@ std::optional<std::string_view> CsvReader::value_by_column_name(std::string_view
 
 static void HTCsvWriteError_throw(HTCsvWriteError &err);
 
-static std::vector<HTStrView> HTCsvWriter_header_to_vectors(std::span<std::string_view> header);
+static std::unique_ptr<HTStrView[]> HTCsvWriter_header_to_HTStrView(std::span<std::string_view> header);
 
 CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_view> header) {
 #ifdef WIN32
@@ -98,8 +98,8 @@ CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_vi
         err.io.libc_errno = errno;
         HTCsvWriteError_throw(err);
     }
-    auto header_vector = HTCsvWriter_header_to_vectors(header);
-    auto err = HTCsvWriter_new(&writer, file, header_vector.data(), header_vector.size());
+    auto header_strview = HTCsvWriter_header_to_HTStrView(header);
+    auto err = HTCsvWriter_new(&writer, file, header_strview.get(), header.size());
     if (err.code != HTNoError) {
         std::fclose(file);
         HTCsvWriteError_throw(err);
@@ -109,19 +109,16 @@ CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_vi
 
 CsvWriter::CsvWriter(const HTLogFile &log_file, std::span<std::string_view> header) :
     file(nullptr) {
-    auto header_vector = HTCsvWriter_header_to_vectors(header);
-    auto err = HTCsvWriter_new(&writer, log_file.file, header_vector.data(), header_vector.size());
+    auto header_strview = HTCsvWriter_header_to_HTStrView(header);
+    auto err = HTCsvWriter_new(&writer, log_file.file, header_strview.get(), header.size());
     HTCsvWriteError_throw(err);
 }
 
-static std::vector<HTStrView> HTCsvWriter_header_to_vectors(std::span<std::string_view> header) {
-    std::vector<HTStrView> result;
-    result.reserve(header.size());
-    for (const auto &i : header) {
-        result.emplace_back(HTStrView{
-            .buf = i.data(),
-            .len = i.length()
-        });
+static std::unique_ptr<HTStrView[]> HTCsvWriter_header_to_HTStrView(std::span<std::string_view> header) {
+    auto result = std::make_unique_for_overwrite<HTStrView[]>(header.size());
+    for (size_t i = 0; i < header.size(); i++) {
+        result[i].buf = header[i].data();
+        result[i].len = header[i].length();
     }
     return result;
 }
@@ -229,6 +226,69 @@ LogFile::LogFile(std::string_view prefix, unsigned num_retries) {
 LogFile::~LogFile() {
     HTLogFile_free(log_file);
     delete log_file;
+}
+
+Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> header, size_t buffer_num_rows) :
+    line_buffer(new HTString[buffer_num_rows]) {
+#ifdef WIN32
+    FILE *file = _wfopen(path.c_str(), L"wb");
+#else
+    FILE *file = std::fopen(path.c_str(), "wb");
+#endif
+    if (!file) {
+        HTCsvWriteError err;
+        err.code = HTErrIO;
+        err.io.libc_errno = errno;
+        HTCsvWriteError_throw(err);
+    }
+    auto header_strview = HTCsvWriter_header_to_HTStrView(header);
+    auto err = HTTracer_new(&tracer, file, header_strview.get(), header.size(), buffer_num_rows);
+    if (err.code != HTNoError) {
+        std::fclose(file);
+        HTCsvWriteError_throw(err);
+    }
+    this->file = file;
+}
+
+Tracer::Tracer(const HTLogFile &log_file, std::span<std::string_view> header, size_t buffer_num_rows) :
+    file(nullptr),
+    line_buffer(new HTString[buffer_num_rows]) {
+    auto header_strview = HTCsvWriter_header_to_HTStrView(header);
+    auto err = HTTracer_new(&tracer, log_file.file, header_strview.get(), header.size(), buffer_num_rows);
+    HTCsvWriteError_throw(err);
+}
+
+Tracer::~Tracer() {
+    HTTracer_free(tracer);
+    if (file) {
+        std::fclose(static_cast<FILE *>(file));
+    }
+    delete[] static_cast<HTString *>(line_buffer);
+}
+
+void Tracer::write_row(std::span<std::variant<std::string_view, std::string>> columns) {
+    HTString *line_buffer = static_cast<HTString *>(this->line_buffer);
+    for (size_t i = 0; i < columns.size(); i++) {
+        switch (columns[i].index()) {
+        case 0: {
+            std::string_view value = std::get<0>(columns[i]);
+            line_buffer[i].buf = const_cast<char *>(value.data());
+            line_buffer[i].len = value.length();
+            line_buffer[i].free_func = nullptr;
+            line_buffer[i].free_param = nullptr;
+            break;
+        }
+        case 1: {
+            std::string *managed_value = new std::string(std::move(std::get<1>(columns[i])));
+            line_buffer[i].buf = managed_value->data();
+            line_buffer[i].len = managed_value->length();
+            line_buffer[i].free_func = HTCsvWriter_free_managed_string;
+            line_buffer[i].free_param = managed_value;
+            break;
+        }
+        }
+    }
+    HTTracer_write_row(tracer, line_buffer);
 }
 
 } // namespace ht
