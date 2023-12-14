@@ -1,12 +1,14 @@
 project('siphash', ['c'],
   version : '1.0',
-  default_options : ['warning_level=3', 'c_std=c17']
+  default_options : ['warning_level=3', 'c_std=c99']
 )
 
 sources = [
-  'siphash.c'
+  'halfsiphash.c',
+  'siphash.c',
 ]
 install_headers(
+  'halfsiphash.h',
   'siphash.h',
 )
 
@@ -19,6 +21,12 @@ siphash_dep = declare_dependency(
   include_directories : include_directories('.'),
   link_with : lib
 )
+
+test_exe = executable('siphash_test', 
+  ['test.c', 'testmain.c'],
+  dependencies : siphash_dep,
+)
+test('siphash_test', test_exe)
 
 pkg_mod = import('pkgconfig')
 pkg_mod.generate(
