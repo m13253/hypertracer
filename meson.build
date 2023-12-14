@@ -71,4 +71,4 @@ pkg_mod.generate(
   version : '0.1',
 )
 
-subdir('test')
+subdir('examples')

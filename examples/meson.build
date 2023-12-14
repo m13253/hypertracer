@@ -5,3 +5,7 @@ copycsv = executable('copycsv', 'copycsv.c',
 copycsv_cpp = executable('copycsv_c++', 'copycsv_c++.cpp',
   dependencies : [hypertracer_cpp_dep]
 )
+
+trace = executable('trace', 'trace.c',
+  dependencies : [hypertracer_dep, dependency('threads')]
+)
