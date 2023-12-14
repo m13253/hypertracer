@@ -58,7 +58,7 @@ size_t HTHashmap_try_set(struct HTHashmap *self, const char *key, size_t key_len
     while (self->data[hash].valid) {
         if (
             self->data[hash].key.len == key_len &&
-            memcmp(self->data[hash].key.buf, key, key_len) == 0
+            (key_len == 0 || memcmp(self->data[hash].key.buf, key, key_len) == 0)
         ) {
             return self->data[hash].value;
         }
@@ -79,7 +79,7 @@ bool HTHashmap_get(const struct HTHashmap *self, size_t *out_value, const char *
     while (self->data[hash].valid) {
         if (
             self->data[hash].key.len == key_len &&
-            memcmp(self->data[hash].key.buf, key, key_len) == 0
+            (key_len == 0 || memcmp(self->data[hash].key.buf, key, key_len) == 0)
         ) {
             *out_value = self->data[hash].value;
             return true;
