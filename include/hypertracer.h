@@ -24,35 +24,33 @@ extern "C" {
 #endif
 
 #ifdef __cplusplus
-#define HT_bool     bool
-#define HT_restrict __restrict
+#define HT_BOOL     bool
+#define HT_RESTRICT __restrict
 #else
-#define HT_bool     _Bool
-#define HT_restrict restrict
+#define HT_BOOL     _Bool
+#define HT_RESTRICT restrict
 #endif
 
-typedef struct HTCsvReader HTCsvReader;
+typedef struct htCsvReader htCsvReader;
+typedef struct htCsvWriter htCsvWriter;
+typedef struct htTracer htTracer;
 
-typedef struct HTCsvWriter HTCsvWriter;
-
-typedef struct HTTracer HTTracer;
-
-typedef struct HTStrView {
+typedef struct htStrView {
     const char *buf;
     size_t len;
-} HTStrView;
+} htStrView;
 
-typedef struct HTString {
+typedef struct htString {
     char *buf;
     size_t len;
     void (*free_func)(void *param);
     void *free_param;
-} HTString;
+} htString;
 
-typedef struct HTLogFile {
+typedef struct htLogFile {
     FILE *file;
-    struct HTStrView filename;
-} HTLogFile;
+    struct htStrView filename;
+} htLogFile;
 
 typedef enum HTErrorCode {
     HTNoError,
@@ -61,68 +59,68 @@ typedef enum HTErrorCode {
     HTErrColumnDuplicated,
 } HTErrorCode;
 
-typedef union HTCsvReadError {
+typedef union htCsvReadError {
     enum HTErrorCode code;
-    union HTCsvReadErrorIO {
+    union htCsvReadErrorIO {
         enum HTErrorCode code;
         uint64_t pos_row;
         uint64_t pos_col;
         int libc_errno;
     } io;
-    union HTCsvReadErrorQuote {
+    union htCsvReadErrorQuote {
         enum HTErrorCode code;
         uint64_t pos_row;
         uint64_t pos_col;
     } quote;
-    union HTCsvReadErrorColumn {
+    union htCsvReadErrorColumn {
         enum HTErrorCode code;
-        struct HTStrView name;
+        struct htStrView name;
         size_t index_a;
         size_t index_b;
     } column;
-} HTCsvReadError;
+} htCsvReadError;
 
-typedef union HTCsvWriteError {
+typedef union htCsvWriteError {
     enum HTErrorCode code;
-    struct HTCsvWriteErrorIO {
+    struct htCsvWriteErrorIO {
         enum HTErrorCode code;
         int libc_errno;
     } io;
-} HTCsvWriteError;
+} htCsvWriteError;
 
-union HTCsvReadError HYPERTRACER_PUBLIC HTCsvReader_new(struct HTCsvReader **out, FILE *file);
-void HYPERTRACER_PUBLIC HTCsvReader_free(struct HTCsvReader *self);
-union HTCsvReadError HYPERTRACER_PUBLIC HTCsvReader_read_row(struct HTCsvReader *self, HT_bool *eof);
-size_t HYPERTRACER_PUBLIC HTCsvReader_num_columns(const struct HTCsvReader *self);
-struct HTStrView HYPERTRACER_PUBLIC HTCsvReader_column_name_by_index(const struct HTCsvReader *self, size_t column);
-HT_bool HYPERTRACER_PUBLIC HTCsvReader_column_index_by_name(const struct HTCsvReader *self, size_t *out, const char *column, size_t column_len);
-struct HTStrView HYPERTRACER_PUBLIC HTCsvReader_value_by_column_index(const struct HTCsvReader *self, size_t column);
-HT_bool HYPERTRACER_PUBLIC HTCsvReader_value_by_column_name(const struct HTCsvReader *self, struct HTStrView *out, const char *column, size_t column_len);
+union htCsvReadError HYPERTRACER_PUBLIC htCsvReader_new(struct htCsvReader **out, FILE *file);
+void HYPERTRACER_PUBLIC htCsvReader_free(struct htCsvReader *self);
+union htCsvReadError HYPERTRACER_PUBLIC htCsvReader_read_row(struct htCsvReader *self, HT_BOOL *eof);
+size_t HYPERTRACER_PUBLIC htCsvReader_num_columns(const struct htCsvReader *self);
+struct htStrView HYPERTRACER_PUBLIC htCsvReader_column_name_by_index(const struct htCsvReader *self, size_t column);
+HT_BOOL HYPERTRACER_PUBLIC htCsvReader_column_index_by_name(const struct htCsvReader *self, size_t *out, const char *column, size_t column_len);
+struct htStrView HYPERTRACER_PUBLIC htCsvReader_value_by_column_index(const struct htCsvReader *self, size_t column);
+HT_BOOL HYPERTRACER_PUBLIC htCsvReader_value_by_column_name(const struct htCsvReader *self, struct htStrView *out, const char *column, size_t column_len);
 
-void HYPERTRACER_PUBLIC HTCsvReadError_free(union HTCsvReadError *err);
-void HYPERTRACER_PUBLIC HTCsvReadError_panic(const union HTCsvReadError *err);
+void HYPERTRACER_PUBLIC htCsvReadError_free(union htCsvReadError *err);
+void HYPERTRACER_PUBLIC htCsvReadError_panic(const union htCsvReadError *err);
 
-union HTCsvWriteError HYPERTRACER_PUBLIC HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, const struct HTStrView header[], size_t num_columns);
-void HYPERTRACER_PUBLIC HTCsvWriter_free(struct HTCsvWriter *self);
-void HYPERTRACER_PUBLIC HTCsvWriter_set_string_by_column_index(struct HTCsvWriter *self, size_t column, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param);
-void HYPERTRACER_PUBLIC HTCsvWriter_set_strview_by_column_index(struct HTCsvWriter *self, size_t column, const char *value, size_t value_len);
-void HYPERTRACER_PUBLIC HTCsvWriter_set_string_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param);
-void HYPERTRACER_PUBLIC HTCsvWriter_set_strview_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, const char *HT_restrict value, size_t value_len);
-union HTCsvWriteError HYPERTRACER_PUBLIC HTCsvWriter_write_row(struct HTCsvWriter *self);
+union htCsvWriteError HYPERTRACER_PUBLIC htCsvWriter_new(struct htCsvWriter **out, FILE *file, const struct htStrView header[], size_t num_columns);
+void HYPERTRACER_PUBLIC htCsvWriter_free(struct htCsvWriter *self);
+void HYPERTRACER_PUBLIC htCsvWriter_set_string_by_column_index(struct htCsvWriter *self, size_t column, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param);
+void HYPERTRACER_PUBLIC htCsvWriter_set_strview_by_column_index(struct htCsvWriter *self, size_t column, const char *value, size_t value_len);
+void HYPERTRACER_PUBLIC htCsvWriter_set_string_by_column_name(struct htCsvWriter *self, const char *HT_RESTRICT column, size_t column_len, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param);
+void HYPERTRACER_PUBLIC htCsvWriter_set_strview_by_column_name(struct htCsvWriter *self, const char *HT_RESTRICT column, size_t column_len, const char *HT_RESTRICT value, size_t value_len);
+union htCsvWriteError HYPERTRACER_PUBLIC htCsvWriter_write_row(struct htCsvWriter *self);
 
-static inline void HTCsvWriteError_free(union HTCsvWriteError *err) {
+static inline void htCsvWriteError_free(union htCsvWriteError *err) {
     (void) err;
 }
-void HYPERTRACER_PUBLIC HTCsvWriteError_panic(const union HTCsvWriteError *err);
+void HYPERTRACER_PUBLIC htCsvWriteError_panic(const union htCsvWriteError *err);
 
 #define HT_LOG_FILE_DEFAULT_NUM_RETRIES 10
-HT_bool HYPERTRACER_PUBLIC HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_len, unsigned num_retries);
-void HYPERTRACER_PUBLIC HTLogFile_free(struct HTLogFile *self);
+HT_BOOL HYPERTRACER_PUBLIC htLogFile_new(struct htLogFile *out, const char *prefix, size_t prefix_len, unsigned num_retries);
+void HYPERTRACER_PUBLIC htLogFile_free(struct htLogFile *self);
 
 #define HT_TRACER_DEFAULT_BUFFER_NUM_ROWS 4096
-union HTCsvWriteError HYPERTRACER_PUBLIC HTTracer_new(struct HTTracer **out, FILE *file, const struct HTStrView header[], size_t num_str_columns, size_t buffer_num_rows);
-union HTCsvWriteError HYPERTRACER_PUBLIC HTTracer_free(struct HTTracer *self);
-void HYPERTRACER_PUBLIC HTTracer_write_row(struct HTTracer *self, struct HTString columns[]);
+union htCsvWriteError HYPERTRACER_PUBLIC htTracer_new(struct htTracer **out, FILE *file, const struct htStrView header[], size_t num_str_columns, size_t buffer_num_rows);
+union htCsvWriteError HYPERTRACER_PUBLIC htTracer_free(struct htTracer *self);
+void HYPERTRACER_PUBLIC htTracer_write_row(struct htTracer *self, struct htString columns[]);
 
 #ifdef __cplusplus
 }

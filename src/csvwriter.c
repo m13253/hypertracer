@@ -14,21 +14,21 @@
 #define fflush_unlocked fflush
 #endif
 
-struct HTCsvWriterValue {
-    struct HTString str;
+struct htCsvWriterValue {
+    struct htString str;
     bool valid;
 };
 
-static union HTCsvWriteError HTCsvWriter_write_header(struct HTCsvWriter *self);
-static union HTCsvWriteError HTCsvWriter_write_value(struct HTCsvWriter *self, const struct HTCsvWriterValue *value);
+static union htCsvWriteError htCsvWriter_write_header(struct htCsvWriter *self);
+static union htCsvWriteError htCsvWriter_write_value(struct htCsvWriter *self, const struct htCsvWriterValue *value);
 
-union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, const struct HTStrView header[], size_t num_columns) {
+union htCsvWriteError htCsvWriter_new(struct htCsvWriter **out, FILE *file, const struct htStrView header[], size_t num_columns) {
     *out = malloc(sizeof **out);
     if (!*out) {
         abort();
     }
 
-    struct HTCsvWriter *self = *out;
+    struct htCsvWriter *self = *out;
     self->file = file;
     self->num_columns = num_columns;
     self->line_buffer = calloc(num_columns, sizeof self->line_buffer[0]);
@@ -36,7 +36,7 @@ union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, cons
         free(self);
         abort();
     }
-    self->column_index = HTHashmap_new(num_columns);
+    self->column_index = htHashmap_new(num_columns);
 
     for (size_t i = 0; i < num_columns; i++) {
         self->line_buffer[i].str.buf = (char *) header[i].buf;
@@ -44,88 +44,88 @@ union HTCsvWriteError HTCsvWriter_new(struct HTCsvWriter **out, FILE *file, cons
         self->line_buffer[i].valid = true;
     }
     for (size_t i = 0; i < num_columns; i++) {
-        if (HTHashmap_try_set(&self->column_index, header[i].buf, header[i].len, i) != i) {
-            fputs("panic: HTCsvWriter_new: duplicate column names\n", stderr);
+        if (htHashmap_try_set(&self->column_index, header[i].buf, header[i].len, i) != i) {
+            fputs("panic: htCsvWriter_new: duplicate column names\n", stderr);
             free(self->line_buffer);
-            HTHashmap_free(&self->column_index);
+            htHashmap_free(&self->column_index);
             free(self);
             abort();
         };
     }
 
-    union HTCsvWriteError err = HTCsvWriter_write_header(self);
+    union htCsvWriteError err = htCsvWriter_write_header(self);
     if (err.code != HTNoError) {
         free(self->line_buffer);
-        HTHashmap_free(&self->column_index);
+        htHashmap_free(&self->column_index);
         free(self);
         return err;
     }
 
-    return HTCsvWriteError_new_no_error();
+    return htCsvWriteError_new_no_error();
 }
 
-static void HTCsvWriter_free_line_buffer(struct HTCsvWriter *self) {
+static void htCsvWriter_free_line_buffer(struct htCsvWriter *self) {
     for (size_t i = 0; i < self->num_columns; i++) {
         if (self->line_buffer[i].valid) {
-            HTString_free(&self->line_buffer[i].str);
+            htString_free(&self->line_buffer[i].str);
         }
     }
     memset(self->line_buffer, 0, self->num_columns * sizeof self->line_buffer[0]);
 }
 
-void HTCsvWriter_free(struct HTCsvWriter *self) {
-    HTCsvWriter_free_line_buffer(self);
+void htCsvWriter_free(struct htCsvWriter *self) {
+    htCsvWriter_free_line_buffer(self);
     free(self->line_buffer);
-    HTHashmap_free(&self->column_index);
+    htHashmap_free(&self->column_index);
     free(self);
 }
 
-static union HTCsvWriteError HTCsvWriter_write_header(struct HTCsvWriter *self) {
+static union htCsvWriteError htCsvWriter_write_header(struct htCsvWriter *self) {
     const char utf8_mark[3] = {'\xef', '\xbb', '\xbf'};
     for (size_t i = 0; i < 3; i++) {
         if (putc_unlocked(utf8_mark[i], self->file) == EOF) {
-            return HTCsvWriteError_new_io(errno);
+            return htCsvWriteError_new_io(errno);
         }
     }
-    return HTCsvWriter_write_row(self);
+    return htCsvWriter_write_row(self);
 }
 
-union HTCsvWriteError HTCsvWriter_write_row(struct HTCsvWriter *self) {
+union htCsvWriteError htCsvWriter_write_row(struct htCsvWriter *self) {
     for (size_t i = 0; i < self->num_columns; i++) {
         if (!self->line_buffer[i].valid) {
-            fprintf(stderr, "panic: HTCsvWriter_write_row: column #%zu is not set\n", i);
+            fprintf(stderr, "panic: htCsvWriter_write_row: column #%zu is not set\n", i);
             abort();
         }
     }
     for (size_t i = 0; i < self->num_columns; i++) {
         if (i != 0) {
             if (putc_unlocked(',', self->file) == EOF) {
-                HTCsvWriter_free_line_buffer(self);
-                return HTCsvWriteError_new_io(errno);
+                htCsvWriter_free_line_buffer(self);
+                return htCsvWriteError_new_io(errno);
             }
         }
-        union HTCsvWriteError err = HTCsvWriter_write_value(self, &self->line_buffer[i]);
+        union htCsvWriteError err = htCsvWriter_write_value(self, &self->line_buffer[i]);
         if (err.code != HTNoError) {
-            HTCsvWriter_free_line_buffer(self);
+            htCsvWriter_free_line_buffer(self);
             return err;
         }
     }
     const char crlf[2] = {'\r', '\n'};
     for (size_t i = 0; i < 2; i++) {
         if (putc_unlocked(crlf[i], self->file) == EOF) {
-            HTCsvWriter_free_line_buffer(self);
-            return HTCsvWriteError_new_io(errno);
+            htCsvWriter_free_line_buffer(self);
+            return htCsvWriteError_new_io(errno);
         }
     }
     if (fflush_unlocked(self->file) == EOF) {
-        HTCsvWriter_free_line_buffer(self);
-        return HTCsvWriteError_new_io(errno);
+        htCsvWriter_free_line_buffer(self);
+        return htCsvWriteError_new_io(errno);
     }
-    HTCsvWriter_free_line_buffer(self);
-    return HTCsvWriteError_new_no_error();
+    htCsvWriter_free_line_buffer(self);
+    return htCsvWriteError_new_no_error();
 }
 
-static union HTCsvWriteError HTCsvWriter_write_value(struct HTCsvWriter *self, const struct HTCsvWriterValue *value) {
+static union htCsvWriteError htCsvWriter_write_value(struct htCsvWriter *self, const struct htCsvWriterValue *value) {
     bool need_escaping = false;
     for (size_t i = 0; i < value->str.len; i++) {
         if (value->str.buf[i] == '\n' || value->str.buf[i] == '\r' || value->str.buf[i] == '"' || value->str.buf[i] == ',') {
@@ -134,30 +134,30 @@ static union HTCsvWriteError HTCsvWriter_write_value(struct HTCsvWriter *self, c
     }
     if (need_escaping) {
         if (putc_unlocked('"', self->file) == EOF) {
-            return HTCsvWriteError_new_io(errno);
+            return htCsvWriteError_new_io(errno);
         }
     }
     for (size_t i = 0; i < value->str.len; i++) {
         if (putc_unlocked(value->str.buf[i], self->file) == EOF) {
-            return HTCsvWriteError_new_io(errno);
+            return htCsvWriteError_new_io(errno);
         }
         if (value->str.buf[i] == '"') {
             if (putc_unlocked('"', self->file) == EOF) {
-                return HTCsvWriteError_new_io(errno);
+                return htCsvWriteError_new_io(errno);
             }
         }
     }
     if (need_escaping) {
         if (putc_unlocked('"', self->file) == EOF) {
-            return HTCsvWriteError_new_io(errno);
+            return htCsvWriteError_new_io(errno);
         }
     }
-    return HTCsvWriteError_new_no_error();
+    return htCsvWriteError_new_no_error();
 }
 
-void HTCsvWriter_set_string_by_column_index(struct HTCsvWriter *self, size_t column, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param) {
+void htCsvWriter_set_string_by_column_index(struct htCsvWriter *self, size_t column, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param) {
     if (self->line_buffer[column].valid) {
-        fprintf(stderr, "panic: HTCsvWriter_set_string_by_column_index: duplicate column #%zu\n", column);
+        fprintf(stderr, "panic: htCsvWriter_set_string_by_column_index: duplicate column #%zu\n", column);
         abort();
     }
     self->line_buffer[column].str.buf = value;
@@ -167,9 +167,9 @@ void HTCsvWriter_set_string_by_column_index(struct HTCsvWriter *self, size_t col
     self->line_buffer[column].valid = true;
 }
 
-void HTCsvWriter_set_strview_by_column_index(struct HTCsvWriter *self, size_t column, const char *value, size_t value_len) {
+void htCsvWriter_set_strview_by_column_index(struct htCsvWriter *self, size_t column, const char *value, size_t value_len) {
     if (self->line_buffer[column].valid) {
-        fprintf(stderr, "panic: HTCsvWriter_set_strview_by_column_index: duplicate column #%zu\n", column);
+        fprintf(stderr, "panic: htCsvWriter_set_strview_by_column_index: duplicate column #%zu\n", column);
         abort();
     }
     self->line_buffer[column].str.buf = (char *) value;
@@ -177,10 +177,10 @@ void HTCsvWriter_set_strview_by_column_index(struct HTCsvWriter *self, size_t co
     self->line_buffer[column].valid = true;
 }
 
-static size_t HTCsvWriter_column_index_by_name(const struct HTCsvWriter *self, const char *column, size_t column_len) {
+static size_t htCsvWriter_column_index_by_name(const struct htCsvWriter *self, const char *column, size_t column_len) {
     size_t out;
-    if (!HTHashmap_get(&self->column_index, &out, column, column_len)) {
-        fputs("panic: HTCsvWriter_set_string_by_column_index: unknown column ", stderr);
+    if (!htHashmap_get(&self->column_index, &out, column, column_len)) {
+        fputs("panic: htCsvWriter_set_string_by_column_index: unknown column ", stderr);
         fwrite(column, 1, column_len, stderr);
         putc('\n', stderr);
         abort();
@@ -188,10 +188,10 @@ static size_t HTCsvWriter_column_index_by_name(const struct HTCsvWriter *self, c
     return out;
 }
 
-void HTCsvWriter_set_string_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param) {
-    HTCsvWriter_set_string_by_column_index(self, HTCsvWriter_column_index_by_name(self, column, column_len), value, value_len, value_free_func, value_free_param);
+void htCsvWriter_set_string_by_column_name(struct htCsvWriter *self, const char *HT_RESTRICT column, size_t column_len, char *value, size_t value_len, void (*value_free_func)(void *param), void *value_free_param) {
+    htCsvWriter_set_string_by_column_index(self, htCsvWriter_column_index_by_name(self, column, column_len), value, value_len, value_free_func, value_free_param);
 }
 
-void HTCsvWriter_set_strview_by_column_name(struct HTCsvWriter *self, const char *HT_restrict column, size_t column_len, const char *HT_restrict value, size_t value_len) {
-    HTCsvWriter_set_strview_by_column_index(self, HTCsvWriter_column_index_by_name(self, column, column_len), value, value_len);
+void htCsvWriter_set_strview_by_column_name(struct htCsvWriter *self, const char *HT_RESTRICT column, size_t column_len, const char *HT_RESTRICT value, size_t value_len) {
+    htCsvWriter_set_strview_by_column_index(self, htCsvWriter_column_index_by_name(self, column, column_len), value, value_len);
 }

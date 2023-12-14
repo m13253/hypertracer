@@ -23,10 +23,10 @@
 #endif
 #endif
 
-struct HTCsvReader;
-struct HTCsvWriter;
-struct HTLogFile;
-struct HTTracer;
+struct htCsvReader;
+struct htCsvWriter;
+struct htLogFile;
+struct htTracer;
 
 namespace ht {
 
@@ -50,7 +50,7 @@ public:
     std::optional<std::string_view> value_by_column_name(std::string_view column) const;
 
 private:
-    HTCsvReader *reader;
+    htCsvReader *reader;
     void *file;
 };
 
@@ -69,7 +69,7 @@ public:
     void write_row();
 
 private:
-    HTCsvWriter *writer;
+    htCsvWriter *writer;
     void *file;
 };
 
@@ -85,7 +85,7 @@ public:
     std::string_view filename() const;
 
 private:
-    HTLogFile *log_file;
+    htLogFile *log_file;
 };
 
 class HYPERTRACER_CPLUSPLUS_PUBLIC Tracer final {
@@ -99,7 +99,7 @@ public:
     void write_row(std::span<std::variant<std::string_view, std::string *>> columns);
 
 private:
-    HTTracer *tracer;
+    htTracer *tracer;
     void *file;
 };
 

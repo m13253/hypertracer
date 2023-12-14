@@ -1,14 +1,14 @@
-#ifndef HT_TRACER_H
-#define HT_TRACER_H
+#ifndef HYPERTRACER_TRACER_H
+#define HYPERTRACER_TRACER_H
 
 #include "mpsc.h"
 #include <hypertracer.h>
 #include <threads.h>
 
-struct HTTracer {
-    struct HTMpsc chan;
-    struct HTCsvWriter *csv_writer;
-    union HTCsvWriteError err;
+struct htTracer {
+    struct htMpsc chan;
+    struct htCsvWriter *csv_writer;
+    union htCsvWriteError err;
     thrd_t write_thread;
 };
 

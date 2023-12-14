@@ -12,7 +12,7 @@
 
 struct ThreadParams {
     pthread_t thread;
-    HTTracer *tracer;
+    htTracer *tracer;
     struct timespec start;
     struct timespec end;
     int64_t interval_nsec;
@@ -57,7 +57,7 @@ static void *thread_start(void *ptr) {
         } while (sleep_result != 0);
 
         for (uint64_t trace_id = 0; trace_id < params->trace_per_batch; trace_id++) {
-            HTString trace[3];
+            htString trace[3];
 #ifdef __APPLE__
             uint64_t thread_id;
             if (pthread_threadid_np(pthread_self(), &thread_id) != 0) {
@@ -94,7 +94,7 @@ static void *thread_start(void *ptr) {
             trace[2].len = len;
             trace[2].free_func = free;
             trace[2].free_param = trace[2].buf;
-            HTTracer_write_row(params->tracer, trace);
+            htTracer_write_row(params->tracer, trace);
         }
     }
 
@@ -102,8 +102,8 @@ static void *thread_start(void *ptr) {
 }
 
 int main(void) {
-    struct HTLogFile log_file;
-    if (!HTLogFile_new(&log_file, "trace", 5, 8)) {
+    struct htLogFile log_file;
+    if (!htLogFile_new(&log_file, "trace", 5, 8)) {
         fputs("Unable to create output file\n", stderr);
         abort();
     }
@@ -111,17 +111,17 @@ int main(void) {
     fwrite(log_file.filename.buf, 1, log_file.filename.len, stdout);
     fputs(", will take 10 seconds\n", stdout);
 
-    struct HTStrView header[3];
+    struct htStrView header[3];
     header[0].buf = "thread_id";
     header[0].len = 9;
     header[1].buf = "batch_id";
     header[1].len = 8;
     header[2].buf = "trace_id";
     header[2].len = 8;
-    struct HTTracer *tracer;
-    union HTCsvWriteError err = HTTracer_new(&tracer, log_file.file, header, 3, HT_TRACER_DEFAULT_BUFFER_NUM_ROWS);
-    HTCsvWriteError_panic(&err);
-    HTCsvWriteError_free(&err);
+    struct htTracer *tracer;
+    union htCsvWriteError err = htTracer_new(&tracer, log_file.file, header, 3, HT_TRACER_DEFAULT_BUFFER_NUM_ROWS);
+    htCsvWriteError_panic(&err);
+    htCsvWriteError_free(&err);
 
     struct timespec start;
     if (clock_gettime(CLOCK_MONOTONIC, &start) != 0) {
@@ -157,10 +157,10 @@ int main(void) {
         }
     }
 
-    err = HTTracer_free(tracer);
-    HTCsvWriteError_panic(&err);
-    HTCsvWriteError_free(&err);
-    HTLogFile_free(&log_file);
+    err = htTracer_free(tracer);
+    htCsvWriteError_panic(&err);
+    htCsvWriteError_free(&err);
+    htLogFile_free(&log_file);
 
     return 0;
 }

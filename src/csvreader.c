@@ -19,135 +19,135 @@ enum State {
     State0D,
 };
 
-static union HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self);
+static union htCsvReadError htCsvReader_read_header(struct htCsvReader *self);
 
-union HTCsvReadError HTCsvReader_new(struct HTCsvReader **out, FILE *file) {
+union htCsvReadError htCsvReader_new(struct htCsvReader **out, FILE *file) {
     *out = malloc(sizeof **out);
     if (!*out) {
         abort();
     }
 
-    struct HTCsvReader *self = *out;
+    struct htCsvReader *self = *out;
     self->file = file;
     self->pos_row = 0;
     self->pos_col = 0;
-    union HTCsvReadError err = HTCsvReader_read_header(self);
+    union htCsvReadError err = htCsvReader_read_header(self);
     if (err.code != HTNoError) {
         free(self);
         return err;
     }
 
-    size_t num_columns = HTCsvReader_num_columns(self);
-    self->column_index = HTHashmap_new(num_columns);
+    size_t num_columns = htCsvReader_num_columns(self);
+    self->column_index = htHashmap_new(num_columns);
     for (size_t i = 0; i < num_columns; i++) {
-        const struct HTStrView *column = &self->head_buffer.data[i];
-        size_t old_index = HTHashmap_try_set(&self->column_index, column->buf, column->len, i);
+        const struct htStrView *column = &self->head_buffer.data[i];
+        size_t old_index = htHashmap_try_set(&self->column_index, column->buf, column->len, i);
         if (old_index != i && column->len != 0) {
-            union HTCsvReadError err = HTCsvReadError_new_column(column->buf, column->len, old_index, i);
-            HTArray_free(&self->head_buffer);
-            HTHashmap_free(&self->column_index);
+            union htCsvReadError err = htCsvReadError_new_column(column->buf, column->len, old_index, i);
+            htArray_free(&self->head_buffer);
+            htHashmap_free(&self->column_index);
             free(self);
             return err;
         }
     }
-    self->line_buffer = HTArray_with_capacity(num_columns);
-    return HTCsvReadError_new_no_error();
+    self->line_buffer = htArray_with_capacity(num_columns);
+    return htCsvReadError_new_no_error();
 }
 
-void HTCsvReader_free(struct HTCsvReader *self) {
-    HTArray_free(&self->head_buffer);
-    HTArray_free(&self->line_buffer);
-    HTHashmap_free(&self->column_index);
+void htCsvReader_free(struct htCsvReader *self) {
+    htArray_free(&self->head_buffer);
+    htArray_free(&self->line_buffer);
+    htHashmap_free(&self->column_index);
     free(self);
 }
 
-static void HTCsvReader_push_pending_chars(struct HTStrBuilder *field, enum State *state) {
+static void htCsvReader_push_pending_chars(struct htStrBuilder *field, enum State *state) {
     switch (*state) {
     case StateEF:
-        HTStrBuilder_push(field, '\xef');
+        htStrBuilder_push(field, '\xef');
         *state = StateField;
         break;
     case StateEFBB:
-        HTStrBuilder_push(field, '\xef');
-        HTStrBuilder_push(field, '\xbb');
+        htStrBuilder_push(field, '\xef');
+        htStrBuilder_push(field, '\xbb');
         *state = StateField;
         break;
     case State0D:
-        HTStrBuilder_push(field, '\r');
+        htStrBuilder_push(field, '\r');
         *state = StateField;
         break;
     default:;
     }
 }
 
-static union HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
+static union htCsvReadError htCsvReader_read_header(struct htCsvReader *self) {
     enum State state = StateStart;
-    self->head_buffer = HTArray_new();
-    struct HTStrBuilder field = HTStrBuilder_new();
+    self->head_buffer = htArray_new();
+    struct htStrBuilder field = htStrBuilder_new();
     for (;;) {
         int ch = getc_unlocked(self->file);
         if (ch == EOF) {
             if (ferror_unlocked(self->file)) {
-                union HTCsvReadError err = HTCsvReadError_new_io(self->pos_row, self->pos_col, errno);
-                HTStrBuilder_free(&field);
-                HTArray_free(&self->head_buffer);
+                union htCsvReadError err = htCsvReadError_new_io(self->pos_row, self->pos_col, errno);
+                htStrBuilder_free(&field);
+                htArray_free(&self->head_buffer);
                 return err;
             } else {
-                HTCsvReader_push_pending_chars(&field, &state);
+                htCsvReader_push_pending_chars(&field, &state);
                 if (state == StateStart) {
-                    return HTCsvReadError_new_no_error();
+                    return htCsvReadError_new_no_error();
                 }
                 if (state == StateQuote) {
-                    HTStrBuilder_free(&field);
-                    HTArray_free(&self->head_buffer);
-                    return HTCsvReadError_new_quote(self->pos_row, self->pos_col);
+                    htStrBuilder_free(&field);
+                    htArray_free(&self->head_buffer);
+                    return htCsvReadError_new_quote(self->pos_row, self->pos_col);
                 }
-                HTArray_push(&self->head_buffer, &field);
-                HTArray_shrink(&self->head_buffer);
-                return HTCsvReadError_new_no_error();
+                htArray_push(&self->head_buffer, &field);
+                htArray_shrink(&self->head_buffer);
+                return htCsvReadError_new_no_error();
             }
         }
         switch ((char) ch) {
         case '\n':
             if (state != State0D) {
-                HTCsvReader_push_pending_chars(&field, &state);
+                htCsvReader_push_pending_chars(&field, &state);
             }
             if (state == StateQuote) {
-                HTStrBuilder_push(&field, (char) ch);
+                htStrBuilder_push(&field, (char) ch);
                 break;
             }
-            HTArray_push(&self->head_buffer, &field);
-            HTArray_shrink(&self->head_buffer);
+            htArray_push(&self->head_buffer, &field);
+            htArray_shrink(&self->head_buffer);
             self->pos_row++;
             self->pos_col = 0;
-            return HTCsvReadError_new_no_error();
+            return htCsvReadError_new_no_error();
         case '\r':
-            HTCsvReader_push_pending_chars(&field, &state);
+            htCsvReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
-                HTStrBuilder_push(&field, (char) ch);
+                htStrBuilder_push(&field, (char) ch);
                 break;
             }
             state = State0D;
             break;
         case '"':
-            HTCsvReader_push_pending_chars(&field, &state);
+            htCsvReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
                 state = StateQuoteEnd;
                 break;
             }
             if (state == StateQuoteEnd) {
-                HTStrBuilder_push(&field, (char) ch);
+                htStrBuilder_push(&field, (char) ch);
             }
             state = StateQuote;
             break;
         case ',':
-            HTCsvReader_push_pending_chars(&field, &state);
+            htCsvReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
-                HTStrBuilder_push(&field, (char) ch);
+                htStrBuilder_push(&field, (char) ch);
                 break;
             }
-            HTArray_push(&self->head_buffer, &field);
-            field = HTStrBuilder_new();
+            htArray_push(&self->head_buffer, &field);
+            field = htStrBuilder_new();
             state = StateField;
             break;
         case '\xbb':
@@ -155,28 +155,28 @@ static union HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
                 state = StateEFBB;
                 break;
             }
-            HTCsvReader_push_pending_chars(&field, &state);
-            HTStrBuilder_push(&field, (char) ch);
+            htCsvReader_push_pending_chars(&field, &state);
+            htStrBuilder_push(&field, (char) ch);
             break;
         case '\xbf':
             if (state == StateEFBB) {
                 state = StateField;
                 break;
             }
-            HTCsvReader_push_pending_chars(&field, &state);
-            HTStrBuilder_push(&field, (char) ch);
+            htCsvReader_push_pending_chars(&field, &state);
+            htStrBuilder_push(&field, (char) ch);
             break;
         case '\xef':
-            HTCsvReader_push_pending_chars(&field, &state);
+            htCsvReader_push_pending_chars(&field, &state);
             if (state == StateStart) {
                 state = StateEF;
                 break;
             }
-            HTStrBuilder_push(&field, (char) ch);
+            htStrBuilder_push(&field, (char) ch);
             break;
         default:
-            HTCsvReader_push_pending_chars(&field, &state);
-            HTStrBuilder_push(&field, (char) ch);
+            htCsvReader_push_pending_chars(&field, &state);
+            htStrBuilder_push(&field, (char) ch);
             if (state != StateQuote) {
                 state = StateField;
             }
@@ -190,88 +190,88 @@ static union HTCsvReadError HTCsvReader_read_header(struct HTCsvReader *self) {
     }
 }
 
-union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, HT_bool *eof) {
+union htCsvReadError htCsvReader_read_row(struct htCsvReader *self, HT_BOOL *eof) {
     enum State state = StateStart;
-    HTArray_clear(&self->line_buffer);
-    struct HTStrBuilder field = HTStrBuilder_new();
+    htArray_clear(&self->line_buffer);
+    struct htStrBuilder field = htStrBuilder_new();
     for (;;) {
         int ch = getc_unlocked(self->file);
         if (ch == EOF) {
             if (ferror_unlocked(self->file)) {
-                union HTCsvReadError err = HTCsvReadError_new_io(self->pos_row, self->pos_col, errno);
-                HTStrBuilder_free(&field);
-                HTArray_clear(&self->line_buffer);
+                union htCsvReadError err = htCsvReadError_new_io(self->pos_row, self->pos_col, errno);
+                htStrBuilder_free(&field);
+                htArray_clear(&self->line_buffer);
                 *eof = false;
                 return err;
             } else {
-                HTCsvReader_push_pending_chars(&field, &state);
+                htCsvReader_push_pending_chars(&field, &state);
                 if (state == StateStart) {
                     *eof = true;
-                    return HTCsvReadError_new_no_error();
+                    return htCsvReadError_new_no_error();
                 }
                 if (state == StateQuote) {
-                    HTStrBuilder_free(&field);
-                    HTArray_clear(&self->line_buffer);
+                    htStrBuilder_free(&field);
+                    htArray_clear(&self->line_buffer);
                     *eof = false;
-                    return HTCsvReadError_new_quote(self->pos_row, self->pos_col);
+                    return htCsvReadError_new_quote(self->pos_row, self->pos_col);
                 }
-                if (!HTArray_try_push(&self->line_buffer, &field)) {
-                    HTStrBuilder_free(&field);
+                if (!htArray_try_push(&self->line_buffer, &field)) {
+                    htStrBuilder_free(&field);
                 }
                 *eof = false;
-                return HTCsvReadError_new_no_error();
+                return htCsvReadError_new_no_error();
             }
         }
         switch ((char) ch) {
         case '\n':
             if (state != State0D) {
-                HTCsvReader_push_pending_chars(&field, &state);
+                htCsvReader_push_pending_chars(&field, &state);
             }
             if (state == StateQuote) {
-                HTStrBuilder_push(&field, (char) ch);
+                htStrBuilder_push(&field, (char) ch);
                 break;
             }
-            if (!HTArray_try_push(&self->line_buffer, &field)) {
-                HTStrBuilder_free(&field);
+            if (!htArray_try_push(&self->line_buffer, &field)) {
+                htStrBuilder_free(&field);
             }
             self->pos_row++;
             self->pos_col = 0;
             *eof = false;
-            return HTCsvReadError_new_no_error();
+            return htCsvReadError_new_no_error();
         case '\r':
-            HTCsvReader_push_pending_chars(&field, &state);
+            htCsvReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
-                HTStrBuilder_push(&field, (char) ch);
+                htStrBuilder_push(&field, (char) ch);
                 break;
             }
             state = State0D;
             break;
         case '"':
-            HTCsvReader_push_pending_chars(&field, &state);
+            htCsvReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
                 state = StateQuoteEnd;
                 break;
             }
             if (state == StateQuoteEnd) {
-                HTStrBuilder_push(&field, (char) ch);
+                htStrBuilder_push(&field, (char) ch);
             }
             state = StateQuote;
             break;
         case ',':
-            HTCsvReader_push_pending_chars(&field, &state);
+            htCsvReader_push_pending_chars(&field, &state);
             if (state == StateQuote) {
-                HTStrBuilder_push(&field, (char) ch);
+                htStrBuilder_push(&field, (char) ch);
                 break;
             }
-            if (!HTArray_try_push(&self->line_buffer, &field)) {
-                HTStrBuilder_free(&field);
+            if (!htArray_try_push(&self->line_buffer, &field)) {
+                htStrBuilder_free(&field);
             }
-            field = HTStrBuilder_new();
+            field = htStrBuilder_new();
             state = StateField;
             break;
         default:
-            HTCsvReader_push_pending_chars(&field, &state);
-            HTStrBuilder_push(&field, (char) ch);
+            htCsvReader_push_pending_chars(&field, &state);
+            htStrBuilder_push(&field, (char) ch);
             if (state != StateQuote) {
                 state = StateField;
             }
@@ -285,30 +285,30 @@ union HTCsvReadError HTCsvReader_read_row(struct HTCsvReader *self, HT_bool *eof
     }
 }
 
-size_t HTCsvReader_num_columns(const struct HTCsvReader *self) {
+size_t htCsvReader_num_columns(const struct htCsvReader *self) {
     return self->head_buffer.len;
 }
 
-struct HTStrView HTCsvReader_column_name_by_index(const struct HTCsvReader *self, size_t column) {
-    return HTStrView_new(self->head_buffer.data[column].buf, self->head_buffer.data[column].len);
+struct htStrView htCsvReader_column_name_by_index(const struct htCsvReader *self, size_t column) {
+    return htStrView_new(self->head_buffer.data[column].buf, self->head_buffer.data[column].len);
 }
 
-HT_bool HTCsvReader_column_index_by_name(const struct HTCsvReader *self, size_t *out, const char *column, size_t column_len) {
-    return HTHashmap_get(&self->column_index, out, column, column_len);
+HT_BOOL htCsvReader_column_index_by_name(const struct htCsvReader *self, size_t *out, const char *column, size_t column_len) {
+    return htHashmap_get(&self->column_index, out, column, column_len);
 }
 
-struct HTStrView HTCsvReader_value_by_column_index(const struct HTCsvReader *self, size_t column) {
+struct htStrView htCsvReader_value_by_column_index(const struct htCsvReader *self, size_t column) {
     if (column >= self->line_buffer.len) {
-        return HTStrView_empty();
+        return htStrView_empty();
     }
-    return HTStrView_new(self->line_buffer.data[column].buf, self->line_buffer.data[column].len);
+    return htStrView_new(self->line_buffer.data[column].buf, self->line_buffer.data[column].len);
 }
 
-HT_bool HTCsvReader_value_by_column_name(const struct HTCsvReader *self, struct HTStrView *out, const char *column, size_t column_len) {
+HT_BOOL htCsvReader_value_by_column_name(const struct htCsvReader *self, struct htStrView *out, const char *column, size_t column_len) {
     size_t index;
-    if (!HTCsvReader_column_index_by_name(self, &index, column, column_len)) {
+    if (!htCsvReader_column_index_by_name(self, &index, column, column_len)) {
         return false;
     }
-    *out = HTCsvReader_value_by_column_index(self, index);
+    *out = htCsvReader_value_by_column_index(self, index);
     return true;
 }

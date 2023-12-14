@@ -1,17 +1,17 @@
-#ifndef HT_STRBUILDER_H
-#define HT_STRBUILDER_H
+#ifndef HYPERTRACER_STRBUILDER_H
+#define HYPERTRACER_STRBUILDER_H
 
 #include <stddef.h>
 
-struct HTStrBuilder {
+struct htStrBuilder {
     char *buf;
     size_t len;
     size_t cap;
 };
 
-struct HTStrBuilder HTStrBuilder_new(void);
-void HTStrBuilder_free(struct HTStrBuilder *self);
-void HTStrBuilder_push(struct HTStrBuilder *self, char ch);
-void HTStrBuilder_shrink(struct HTStrBuilder *self);
+struct htStrBuilder htStrBuilder_new(void);
+void htStrBuilder_free(struct htStrBuilder *self);
+void htStrBuilder_push(struct htStrBuilder *self, char ch);
+void htStrBuilder_shrink(struct htStrBuilder *self);
 
 #endif

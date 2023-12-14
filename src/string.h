@@ -1,8 +1,8 @@
-#ifndef HT_STRING_H
-#define HT_STRING_H
+#ifndef HYPERTRACER_STRING_H
+#define HYPERTRACER_STRING_H
 
-struct HTString;
+struct htString;
 
-void HTString_free(struct HTString *str);
+void htString_free(struct htString *str);
 
 #endif

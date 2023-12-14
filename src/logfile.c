@@ -8,15 +8,15 @@
 #include <string.h>
 #include <time.h>
 
-HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_len, unsigned num_retries) {
+HT_BOOL htLogFile_new(struct htLogFile *out, const char *prefix, size_t prefix_len, unsigned num_retries) {
     size_t suffix_max_len = sizeof "_0000-00-00T00-00-00Z.csv";
     if (prefix_len >= SIZE_MAX - suffix_max_len) {
-        fputs("panic: HTLogFile_new: filename too long\n", stderr);
+        fputs("panic: htLogFile_new: filename too long\n", stderr);
         abort();
     }
     for (size_t i = 0; i < prefix_len; i++) {
         if (prefix[i] == '\x00') {
-            fputs("panic: HTLogFile_new: filename contains NUL bytes\n", stderr);
+            fputs("panic: htLogFile_new: filename contains NUL bytes\n", stderr);
             abort();
         }
     }
@@ -29,7 +29,7 @@ HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_l
 
     time_t timer = time(NULL);
     if (timer == (time_t) -1) {
-        fputs("panic: HTLogFile_new: failed to get current date and time\n", stderr);
+        fputs("panic: htLogFile_new: failed to get current date and time\n", stderr);
         free(filename);
         abort();
     }
@@ -37,7 +37,7 @@ HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_l
         struct tm tm;
         struct tm *ptm = gmtime_r(&timer, &tm);
         if (ptm == NULL) {
-            fputs("panic: HTLogFile_new: failed to get current date and time\n", stderr);
+            fputs("panic: htLogFile_new: failed to get current date and time\n", stderr);
             free(filename);
             abort();
         }
@@ -55,7 +55,7 @@ HT_bool HTLogFile_new(struct HTLogFile *out, const char *prefix, size_t prefix_l
     return false;
 }
 
-void HTLogFile_free(struct HTLogFile *self) {
+void htLogFile_free(struct htLogFile *self) {
     fclose(self->file);
     free((char *) self->filename.buf);
 }

@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void HTCsvWriteError_panic(const union HTCsvWriteError *err) {
+void htCsvWriteError_panic(const union htCsvWriteError *err) {
     switch (err->code) {
     case HTNoError:
         return;

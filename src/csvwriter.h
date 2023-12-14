@@ -1,14 +1,14 @@
-#ifndef HT_CSVWRITER_H
-#define HT_CSVWRITER_H
+#ifndef HYPERTRACER_CSVWRITER_H
+#define HYPERTRACER_CSVWRITER_H
 
 #include "hashmap.h"
 #include <stdio.h>
 
-struct HTCsvWriter {
+struct htCsvWriter {
     FILE *file;
     size_t num_columns;
-    struct HTCsvWriterValue *line_buffer;
-    struct HTHashmap column_index;
+    struct htCsvWriterValue *line_buffer;
+    struct htHashmap column_index;
 };
 
 #endif
