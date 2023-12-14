@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include "tracer.h"
 #include "csvwrite_error.h"
 #include "mpsc.h"

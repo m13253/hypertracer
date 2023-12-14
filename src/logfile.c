@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <hypertracer.h>
 #include <stdbool.h>
 #include <stdint.h>
