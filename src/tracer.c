@@ -116,8 +116,9 @@ union HTCsvWriteError HTTracer_free(struct HTTracer *self) {
     }
     HTMpsc_free(&self->chan);
     HTCsvWriter_free(self->csv_writer);
+    union HTCsvWriteError err = self->err;
     free(self);
-    return self->err;
+    return err;
 }
 
 void HTTracer_write_row(struct HTTracer *self, struct HTString columns[]) {
