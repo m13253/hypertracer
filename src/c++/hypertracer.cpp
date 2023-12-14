@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <hypertracer.h>
 #include <hypertracer>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <span>
@@ -85,7 +86,29 @@ std::optional<std::string_view> CsvReader::value_by_column_name(std::string_view
 
 static void htCsvWriteError_throw(htCsvWriteError &err);
 
+static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::initializer_list<std::string_view> header);
 static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::span<std::string_view> header);
+
+CsvWriter::CsvWriter(const std::filesystem::path &path, std::initializer_list<std::string_view> header) {
+#ifdef WIN32
+    FILE *file = _wfopen(path.c_str(), L"wb");
+#else
+    FILE *file = std::fopen(path.c_str(), "wb");
+#endif
+    if (!file) {
+        htCsvWriteError err;
+        err.code = HTErrIO;
+        err.io.libc_errno = errno;
+        htCsvWriteError_throw(err);
+    }
+    auto header_strview = htCsvWriter_header_to_htStrView(header);
+    auto err = htCsvWriter_new(&writer, file, header_strview.get(), header.size());
+    if (err.code != HTNoError) {
+        std::fclose(file);
+        htCsvWriteError_throw(err);
+    }
+    this->file = file;
+}
 
 CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_view> header) {
 #ifdef WIN32
@@ -108,11 +131,29 @@ CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_vi
     this->file = file;
 }
 
+CsvWriter::CsvWriter(const LogFile &log_file, std::initializer_list<std::string_view> header) :
+    file(nullptr) {
+    auto header_strview = htCsvWriter_header_to_htStrView(header);
+    auto err = htCsvWriter_new(&writer, log_file.log_file->file, header_strview.get(), header.size());
+    htCsvWriteError_throw(err);
+}
+
 CsvWriter::CsvWriter(const LogFile &log_file, std::span<std::string_view> header) :
     file(nullptr) {
     auto header_strview = htCsvWriter_header_to_htStrView(header);
     auto err = htCsvWriter_new(&writer, log_file.log_file->file, header_strview.get(), header.size());
     htCsvWriteError_throw(err);
+}
+
+static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::initializer_list<std::string_view> header) {
+    auto result = std::make_unique_for_overwrite<htStrView[]>(header.size());
+    size_t i = 0;
+    for (const auto &column : header) {
+        result[i].buf = column.data();
+        result[i].len = column.length();
+        i++;
+    }
+    return result;
 }
 
 static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::span<std::string_view> header) {
@@ -233,6 +274,27 @@ std::string_view LogFile::filename() const {
     return std::string_view(log_file->filename.buf, log_file->filename.len);
 }
 
+Tracer::Tracer(const std::filesystem::path &path, std::initializer_list<std::string_view> header, size_t buffer_num_rows) {
+#ifdef WIN32
+    FILE *file = _wfopen(path.c_str(), L"wb");
+#else
+    FILE *file = std::fopen(path.c_str(), "wb");
+#endif
+    if (!file) {
+        htCsvWriteError err;
+        err.code = HTErrIO;
+        err.io.libc_errno = errno;
+        htCsvWriteError_throw(err);
+    }
+    auto header_strview = htCsvWriter_header_to_htStrView(header);
+    auto err = htTracer_new(&tracer, file, header_strview.get(), header.size(), buffer_num_rows);
+    if (err.code != HTNoError) {
+        std::fclose(file);
+        htCsvWriteError_throw(err);
+    }
+    this->file = file;
+}
+
 Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> header, size_t buffer_num_rows) {
 #ifdef WIN32
     FILE *file = _wfopen(path.c_str(), L"wb");
@@ -252,6 +314,13 @@ Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> he
         htCsvWriteError_throw(err);
     }
     this->file = file;
+}
+
+Tracer::Tracer(const LogFile &log_file, std::initializer_list<std::string_view> header, size_t buffer_num_rows) :
+    file(nullptr) {
+    auto header_strview = htCsvWriter_header_to_htStrView(header);
+    auto err = htTracer_new(&tracer, log_file.log_file->file, header_strview.get(), header.size(), buffer_num_rows);
+    htCsvWriteError_throw(err);
 }
 
 Tracer::Tracer(const LogFile &log_file, std::span<std::string_view> header, size_t buffer_num_rows) :

@@ -61,8 +61,7 @@ int main() {
     ht::LogFile log_file("trace"sv);
     std::cout << "Writing to: "sv << log_file.filename() << ", will take 10 seconds"sv << std::endl;
 
-    std::array<std::string_view, 3> header{"thread_id"sv, "batch_id"sv, "trace_id"sv};
-    ht::Tracer tracer(log_file, header, 8);
+    ht::Tracer tracer(log_file, {"thread_id"sv, "batch_id"sv, "trace_id"sv}, 8);
 
     auto start = std::chrono::high_resolution_clock::now();
     auto end = start + std::chrono::seconds(10);
