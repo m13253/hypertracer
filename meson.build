@@ -25,31 +25,33 @@ sources = [
   'src/string.c',
   'src/tracer.c',
 ]
-
-lib = static_library('hypertracer', sources,
-  install : true,
-  dependencies : deps,
-  include_directories : 'include',
-  gnu_symbol_visibility : 'hidden',
-)
-lib_cpp = static_library('hypertracer_c++', 'src/c++/hypertracer.cpp',
-  install : true,
-  include_directories : 'include',
-  gnu_symbol_visibility : 'hidden',
-)
 install_headers(
   'include/hypertracer',
   'include/hypertracer.h',
   subdir : 'hypertracer'
 )
 
+lib = both_libraries('hypertracer', sources,
+  install : true,
+  dependencies : deps,
+  c_shared_args : ['-DBUILDING_HYPERTRACER'],
+  include_directories : include_directories('include'),
+  gnu_symbol_visibility : 'hidden',
+)
 hypertracer_dep = declare_dependency(
   include_directories : include_directories('include'),
   link_with : lib
 )
+
+lib_cpp = both_libraries('hypertracer_c++', 'src/c++/hypertracer.cpp',
+  install : true,
+  cpp_shared_args : ['-DBUILDING_HYPERTRACER_CPLUSPLUS'],
+  include_directories : include_directories('include'),
+  gnu_symbol_visibility : 'hidden',
+  link_with : lib.get_static_lib()
+)
 hypertracer_cpp_dep = declare_dependency(
   include_directories : include_directories('include'),
-  dependencies : hypertracer_dep,
   link_with : lib_cpp
 )
 

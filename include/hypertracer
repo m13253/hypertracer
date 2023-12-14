@@ -1,5 +1,5 @@
-#ifndef HYPERTRACER_
-#define HYPERTRACER_
+#ifndef HYPERTRACER_CPLUSPLUS
+#define HYPERTRACER_CPLUSPLUS
 
 #include <cstddef>
 #include <filesystem>
@@ -9,6 +9,20 @@
 #include <string_view>
 #include <variant>
 
+#if defined _WIN32 || defined __CYGWIN__
+#ifdef BUILDING_HYPERTRACER_CPLUSPLUS
+#define HYPERTRACER_CPLUSPLUS_PUBLIC __declspec(dllexport)
+#else
+#define HYPERTRACER_CPLUSPLUS_PUBLIC __declspec(dllimport)
+#endif
+#else
+#ifdef BUILDING_HYPERTRACER_CPLUSPLUS
+#define HYPERTRACER_CPLUSPLUS_PUBLIC __attribute__((visibility("default")))
+#else
+#define HYPERTRACER_CPLUSPLUS_PUBLIC
+#endif
+#endif
+
 struct HTCsvReader;
 struct HTCsvWriter;
 struct HTLogFile;
@@ -16,12 +30,12 @@ struct HTTracer;
 
 namespace ht {
 
-class CsvReader;
-class CsvWriter;
-class LogFile;
-class Tracer;
+class HYPERTRACER_CPLUSPLUS_PUBLIC CsvReader;
+class HYPERTRACER_CPLUSPLUS_PUBLIC CsvWriter;
+class HYPERTRACER_CPLUSPLUS_PUBLIC LogFile;
+class HYPERTRACER_CPLUSPLUS_PUBLIC Tracer;
 
-class CsvReader final {
+class HYPERTRACER_CPLUSPLUS_PUBLIC CsvReader final {
 public:
     explicit CsvReader(const std::filesystem::path &path);
     CsvReader(const CsvReader &) = delete;
@@ -40,7 +54,7 @@ private:
     void *file;
 };
 
-class CsvWriter final {
+class HYPERTRACER_CPLUSPLUS_PUBLIC CsvWriter final {
 public:
     explicit CsvWriter(const std::filesystem::path &path, std::span<std::string_view> header);
     explicit CsvWriter(const LogFile &log_file, std::span<std::string_view> header);
@@ -59,7 +73,7 @@ private:
     void *file;
 };
 
-class LogFile final {
+class HYPERTRACER_CPLUSPLUS_PUBLIC LogFile final {
     friend class CsvWriter;
     friend class Tracer;
 
@@ -74,7 +88,7 @@ private:
     HTLogFile *log_file;
 };
 
-class Tracer final {
+class HYPERTRACER_CPLUSPLUS_PUBLIC Tracer final {
 public:
     explicit Tracer(const std::filesystem::path &path, std::span<std::string_view> header, size_t buffer_num_rows = 4096);
     explicit Tracer(const LogFile &log_file, std::span<std::string_view> header, size_t buffer_num_rows = 4096);
