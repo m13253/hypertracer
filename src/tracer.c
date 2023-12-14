@@ -114,6 +114,7 @@ union HTCsvWriteError HTTracer_free(struct HTTracer *self) {
         fputs("panic: HTTracer_free: failed to join the writing thread\n", stderr);
         abort();
     }
+    HTMpsc_free(&self->chan);
     HTCsvWriter_free(self->csv_writer);
     return self->err;
 }
