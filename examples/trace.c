@@ -1,7 +1,7 @@
 #include <hypertracer.h>
 #include <inttypes.h>
 #include <pthread.h>
-#include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -21,7 +21,7 @@ static void *thread_start(void *ptr) {
         abort();
     }
 
-    for (int64_t trace_id = 0;; trace_id++) {
+    for (uint64_t batch_id = 0;; batch_id++) {
         struct timespec now;
         if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
             perror("clock_gettime");
@@ -37,7 +37,10 @@ static void *thread_start(void *ptr) {
         int sleep_result;
         do {
             int64_t diff = (now.tv_sec - params->start.tv_sec) * (int64_t) 1000000000 + (now.tv_nsec - params->start.tv_nsec);
-            int64_t sleep_nsec = diff == 0 ? 0 : params->interval_nsec - diff % params->interval_nsec;
+            if (diff <= 0) {
+                break;
+            }
+            int64_t sleep_nsec = params->interval_nsec - diff % params->interval_nsec;
             struct timespec sleep_req;
             sleep_req.tv_sec = sleep_nsec / 1000000000;
             sleep_req.tv_nsec = sleep_nsec % 1000000000;
@@ -48,14 +51,14 @@ static void *thread_start(void *ptr) {
             }
         } while (sleep_result != 0);
 
-        for (uint64_t i = 0; i < params->trace_per_batch; i++) {
+        for (uint64_t trace_id = 0; trace_id < params->trace_per_batch; trace_id++) {
             HTString trace[3];
             uint64_t thread_id;
             if (pthread_threadid_np(pthread_self(), &thread_id) != 0) {
                 perror("pthread_threadid_np");
                 abort();
             }
-            int len = asprintf(&trace[0].buf, "%" PRIu64, thread_id);
+            int len = asprintf(&trace[0].buf, "0x%" PRIx64, thread_id);
             if (len < 0) {
                 perror("asprintf");
                 abort();
@@ -63,7 +66,7 @@ static void *thread_start(void *ptr) {
             trace[0].len = len;
             trace[0].free_func = free;
             trace[0].free_param = trace[0].buf;
-            len = asprintf(&trace[1].buf, "%" PRIu64, trace_id);
+            len = asprintf(&trace[1].buf, "%" PRIu64, batch_id);
             if (len < 0) {
                 perror("asprintf");
                 free(trace[0].buf);
@@ -72,7 +75,7 @@ static void *thread_start(void *ptr) {
             trace[1].len = len;
             trace[1].free_func = free;
             trace[1].free_param = trace[1].buf;
-            len = asprintf(&trace[2].buf, "%" PRIu64, i);
+            len = asprintf(&trace[2].buf, "%" PRIu64, trace_id);
             if (len < 0) {
                 perror("asprintf");
                 free(trace[0].buf);
@@ -85,12 +88,13 @@ static void *thread_start(void *ptr) {
             HTTracer_write_row(params->tracer, trace);
         }
     }
+
     return NULL;
 }
 
 int main(void) {
     struct HTLogFile log_file;
-    if (!HTLogFile_new(&log_file, "trace", 5, HT_LOG_FILE_DEFAULT_NUM_RETRIES)) {
+    if (!HTLogFile_new(&log_file, "trace", 5, 8)) {
         fputs("Unable to create output file\n", stderr);
         abort();
     }
@@ -120,20 +124,20 @@ int main(void) {
     end.tv_nsec = start.tv_nsec;
 
     struct ThreadParams params[16];
-    for (int i = 0; i < 16; i++) {
+    for (size_t i = 0; i < 16; i++) {
         params[i].tracer = tracer;
         params[i].start = start;
         params[i].end = end;
         params[i].interval_nsec = ((int64_t) i + 1) * 1000000;
         params[i].trace_per_batch = 5;
     }
-    for (int i = 0; i < 16; i++) {
+    for (size_t i = 0; i < 16; i++) {
         if (pthread_create(&params[i].thread, NULL, thread_start, &params[i]) != 0) {
             perror("pthread_create");
             abort();
         }
     }
-    for (int i = 0; i < 16; i++) {
+    for (size_t i = 0; i < 16; i++) {
         void *retval;
         if (pthread_join(params[i].thread, &retval) != 0) {
             perror("pthread_join");

@@ -1,12 +1,11 @@
 #include "tracer.h"
 #include "csvwrite_error.h"
 #include "mpsc.h"
-#include "strview.h"
 #include "string.h"
+#include "strview.h"
 #include <hypertracer.h>
 #include <inttypes.h>
-#include <stdatomic.h>
-#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <threads.h>

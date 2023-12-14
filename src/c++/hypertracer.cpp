@@ -12,6 +12,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <variant>
 #ifdef WIN32
 #include <wchar.h>
 #endif
@@ -107,10 +108,10 @@ CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_vi
     this->file = file;
 }
 
-CsvWriter::CsvWriter(const HTLogFile &log_file, std::span<std::string_view> header) :
+CsvWriter::CsvWriter(const LogFile &log_file, std::span<std::string_view> header) :
     file(nullptr) {
     auto header_strview = HTCsvWriter_header_to_HTStrView(header);
-    auto err = HTCsvWriter_new(&writer, log_file.file, header_strview.get(), header.size());
+    auto err = HTCsvWriter_new(&writer, log_file.log_file->file, header_strview.get(), header.size());
     HTCsvWriteError_throw(err);
 }
 
@@ -228,6 +229,10 @@ LogFile::~LogFile() {
     delete log_file;
 }
 
+std::string_view LogFile::filename() const {
+    return std::string_view(log_file->filename.buf, log_file->filename.len);
+}
+
 Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> header, size_t buffer_num_rows) :
     line_buffer(new HTString[buffer_num_rows]) {
 #ifdef WIN32
@@ -250,11 +255,11 @@ Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> he
     this->file = file;
 }
 
-Tracer::Tracer(const HTLogFile &log_file, std::span<std::string_view> header, size_t buffer_num_rows) :
+Tracer::Tracer(const LogFile &log_file, std::span<std::string_view> header, size_t buffer_num_rows) :
     file(nullptr),
     line_buffer(new HTString[buffer_num_rows]) {
     auto header_strview = HTCsvWriter_header_to_HTStrView(header);
-    auto err = HTTracer_new(&tracer, log_file.file, header_strview.get(), header.size(), buffer_num_rows);
+    auto err = HTTracer_new(&tracer, log_file.log_file->file, header_strview.get(), header.size(), buffer_num_rows);
     HTCsvWriteError_throw(err);
 }
 
@@ -266,7 +271,7 @@ Tracer::~Tracer() {
     delete[] static_cast<HTString *>(line_buffer);
 }
 
-void Tracer::write_row(std::span<std::variant<std::string_view, std::string>> columns) {
+void Tracer::write_row(std::span<std::variant<std::string_view, std::string *>> columns) {
     HTString *line_buffer = static_cast<HTString *>(this->line_buffer);
     for (size_t i = 0; i < columns.size(); i++) {
         switch (columns[i].index()) {
@@ -279,7 +284,7 @@ void Tracer::write_row(std::span<std::variant<std::string_view, std::string>> co
             break;
         }
         case 1: {
-            std::string *managed_value = new std::string(std::move(std::get<1>(columns[i])));
+            std::string *managed_value = std::get<1>(columns[i]);
             line_buffer[i].buf = managed_value->data();
             line_buffer[i].len = managed_value->length();
             line_buffer[i].free_func = HTCsvWriter_free_managed_string;

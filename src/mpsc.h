@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <threads.h>
-#include <time.h>
 
 #define HT_MPSC_ALIGN 64
 
@@ -27,6 +26,7 @@ struct HTMpsc {
 };
 
 struct HTString;
+struct timespec;
 
 void HTMpsc_new(struct HTMpsc *self, size_t cap, size_t num_str_columns);
 void HTMpsc_free(struct HTMpsc *self);

@@ -2,6 +2,9 @@
 #include <filesystem>
 #include <hypertracer>
 #include <iostream>
+#include <optional>
+#include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 

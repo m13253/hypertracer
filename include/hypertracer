@@ -16,9 +16,16 @@ struct HTTracer;
 
 namespace ht {
 
+class CsvReader;
+class CsvWriter;
+class LogFile;
+class Tracer;
+
 class CsvReader final {
 public:
-    CsvReader(const std::filesystem::path &path);
+    explicit CsvReader(const std::filesystem::path &path);
+    CsvReader(const CsvReader &) = delete;
+    CsvReader(CsvReader &&) = default;
     ~CsvReader();
 
     void read_row(bool &eof);
@@ -35,8 +42,10 @@ private:
 
 class CsvWriter final {
 public:
-    CsvWriter(const std::filesystem::path &path, std::span<std::string_view> header);
-    CsvWriter(const HTLogFile &log_file, std::span<std::string_view> header);
+    explicit CsvWriter(const std::filesystem::path &path, std::span<std::string_view> header);
+    explicit CsvWriter(const LogFile &log_file, std::span<std::string_view> header);
+    CsvWriter(const CsvWriter &) = delete;
+    CsvWriter(CsvWriter &&) = default;
     ~CsvWriter();
 
     void set_string_by_column_index(size_t column, std::string &&value);
@@ -51,9 +60,15 @@ private:
 };
 
 class LogFile final {
+    friend class CsvWriter;
+    friend class Tracer;
+
 public:
-    LogFile(std::string_view prefix, unsigned num_retries = 10);
+    explicit LogFile(std::string_view prefix, unsigned num_retries = 10);
+    LogFile(const LogFile &) = delete;
+    LogFile(LogFile &&) = default;
     ~LogFile();
+    std::string_view filename() const;
 
 private:
     HTLogFile *log_file;
@@ -61,11 +76,13 @@ private:
 
 class Tracer final {
 public:
-    Tracer(const std::filesystem::path &path, std::span<std::string_view> header, size_t buffer_num_rows = 4096);
-    Tracer(const HTLogFile &log_file, std::span<std::string_view> header, size_t buffer_num_rows = 4096);
+    explicit Tracer(const std::filesystem::path &path, std::span<std::string_view> header, size_t buffer_num_rows = 4096);
+    explicit Tracer(const LogFile &log_file, std::span<std::string_view> header, size_t buffer_num_rows = 4096);
+    Tracer(const Tracer &) = delete;
+    Tracer(Tracer &&) = default;
     ~Tracer();
 
-    void write_row(std::span<std::variant<std::string_view, std::string>> columns);
+    void write_row(std::span<std::variant<std::string_view, std::string *>> columns);
 
 private:
     HTTracer *tracer;
