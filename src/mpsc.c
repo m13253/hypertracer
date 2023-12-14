@@ -157,7 +157,7 @@ static inline void HTMpsc_after_push(struct HTMpsc *self) {
     }
 }
 
-void HTMpsc_push(struct HTMpsc *self, const struct timespec *time, const struct HTString *columns) {
+void HTMpsc_push(struct HTMpsc *self, const struct timespec *time, struct HTString *columns) {
     struct HTMpscRow *row = HTMpsc_before_push(self);
     row->time = *time;
     memcpy(row->columns, columns, HTMpsc_num_str_columns(self) * sizeof row->columns[0]);

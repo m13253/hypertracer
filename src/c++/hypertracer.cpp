@@ -233,8 +233,7 @@ std::string_view LogFile::filename() const {
     return std::string_view(log_file->filename.buf, log_file->filename.len);
 }
 
-Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> header, size_t buffer_num_rows) :
-    line_buffer(new HTString[buffer_num_rows]) {
+Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> header, size_t buffer_num_rows) {
 #ifdef WIN32
     FILE *file = _wfopen(path.c_str(), L"wb");
 #else
@@ -256,8 +255,7 @@ Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> he
 }
 
 Tracer::Tracer(const LogFile &log_file, std::span<std::string_view> header, size_t buffer_num_rows) :
-    file(nullptr),
-    line_buffer(new HTString[buffer_num_rows]) {
+    file(nullptr) {
     auto header_strview = HTCsvWriter_header_to_HTStrView(header);
     auto err = HTTracer_new(&tracer, log_file.log_file->file, header_strview.get(), header.size(), buffer_num_rows);
     HTCsvWriteError_throw(err);
@@ -268,11 +266,10 @@ Tracer::~Tracer() {
     if (file) {
         std::fclose(static_cast<FILE *>(file));
     }
-    delete[] static_cast<HTString *>(line_buffer);
 }
 
 void Tracer::write_row(std::span<std::variant<std::string_view, std::string *>> columns) {
-    HTString *line_buffer = static_cast<HTString *>(this->line_buffer);
+    auto line_buffer = std::make_unique_for_overwrite<HTString[]>(columns.size());
     for (size_t i = 0; i < columns.size(); i++) {
         switch (columns[i].index()) {
         case 0: {
@@ -293,7 +290,7 @@ void Tracer::write_row(std::span<std::variant<std::string_view, std::string *>> 
         }
         }
     }
-    HTTracer_write_row(tracer, line_buffer);
+    HTTracer_write_row(tracer, line_buffer.get());
 }
 
 } // namespace ht

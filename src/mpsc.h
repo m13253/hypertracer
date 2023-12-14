@@ -30,7 +30,7 @@ struct timespec;
 
 void HTMpsc_new(struct HTMpsc *self, size_t cap, size_t num_str_columns);
 void HTMpsc_free(struct HTMpsc *self);
-void HTMpsc_push(struct HTMpsc *self, const struct timespec *time, const struct HTString *columns);
+void HTMpsc_push(struct HTMpsc *self, const struct timespec *time, struct HTString *columns);
 bool HTMpsc_pop(struct HTMpsc *self, struct timespec *time, struct HTString *columns);
 void HTMpsc_close(struct HTMpsc *self);
 static inline size_t HTMpsc_num_str_columns(const struct HTMpsc *self) {

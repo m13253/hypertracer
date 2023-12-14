@@ -87,7 +87,6 @@ public:
 private:
     HTTracer *tracer;
     void *file;
-    void *line_buffer;
 };
 
 } // namespace ht
