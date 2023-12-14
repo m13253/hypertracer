@@ -24,6 +24,7 @@ siphash_dep = declare_dependency(
 
 test_exe = executable('siphash_test', 
   ['test.c', 'testmain.c'],
+  build_by_default : false,
   dependencies : siphash_dep,
 )
 test('siphash_test', test_exe)
