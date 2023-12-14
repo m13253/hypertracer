@@ -1,9 +1,14 @@
+#define _GNU_SOURCE
+
 #include <hypertracer.h>
 #include <inttypes.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#ifndef __APPLE__
+#include <unistd.h>
+#endif
 
 struct ThreadParams {
     pthread_t thread;
@@ -53,11 +58,15 @@ static void *thread_start(void *ptr) {
 
         for (uint64_t trace_id = 0; trace_id < params->trace_per_batch; trace_id++) {
             HTString trace[3];
+#ifdef __APPLE__
             uint64_t thread_id;
             if (pthread_threadid_np(pthread_self(), &thread_id) != 0) {
                 perror("pthread_threadid_np");
                 abort();
             }
+#else
+            uint64_t thread_id = gettid();
+#endif
             int len = asprintf(&trace[0].buf, "0x%" PRIx64, thread_id);
             if (len < 0) {
                 perror("asprintf");
