@@ -54,24 +54,24 @@ void CsvReader::read_row(bool &eof) {
     htCsvReadError_throw(err);
 }
 
-size_t CsvReader::num_columns() const {
+std::size_t CsvReader::num_columns() const {
     return htCsvReader_num_columns(reader);
 }
 
-std::string_view CsvReader::column_name_by_index(size_t column) const {
+std::string_view CsvReader::column_name_by_index(std::size_t column) const {
     auto result = htCsvReader_column_name_by_index(reader, column);
     return std::string_view(result.buf, result.len);
 }
 
-std::optional<size_t> CsvReader::column_index_by_name(std::string_view column) const {
-    size_t out;
+std::optional<std::size_t> CsvReader::column_index_by_name(std::string_view column) const {
+    std::size_t out;
     if (htCsvReader_column_index_by_name(reader, &out, column.data(), column.length())) {
         return out;
     }
     return std::nullopt;
 }
 
-std::string_view CsvReader::value_by_column_index(size_t column) const {
+std::string_view CsvReader::value_by_column_index(std::size_t column) const {
     auto result = htCsvReader_value_by_column_index(reader, column);
     return std::string_view(result.buf, result.len);
 }
@@ -147,7 +147,7 @@ CsvWriter::CsvWriter(const LogFile &log_file, std::span<std::string_view> header
 
 static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::initializer_list<std::string_view> header) {
     auto result = std::make_unique_for_overwrite<htStrView[]>(header.size());
-    size_t i = 0;
+    std::size_t i = 0;
     for (const auto &column : header) {
         result[i].buf = column.data();
         result[i].len = column.length();
@@ -158,7 +158,7 @@ static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::initial
 
 static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::span<std::string_view> header) {
     auto result = std::make_unique_for_overwrite<htStrView[]>(header.size());
-    for (size_t i = 0; i < header.size(); i++) {
+    for (std::size_t i = 0; i < header.size(); i++) {
         result[i].buf = header[i].data();
         result[i].len = header[i].length();
     }
@@ -174,12 +174,12 @@ CsvWriter::~CsvWriter() {
 
 static void htCsvWriter_free_managed_string(void *param);
 
-void CsvWriter::set_string_by_column_index(size_t column, std::string &&value) {
+void CsvWriter::set_string_by_column_index(std::size_t column, std::string &&value) {
     std::string *managed_value = new std::string(std::move(value));
     htCsvWriter_set_string_by_column_index(writer, column, managed_value->data(), managed_value->length(), htCsvWriter_free_managed_string, managed_value);
 }
 
-void CsvWriter::set_strview_by_column_index(size_t column, std::string_view value) {
+void CsvWriter::set_strview_by_column_index(std::size_t column, std::string_view value) {
     htCsvWriter_set_strview_by_column_index(writer, column, value.data(), value.length());
 }
 
@@ -274,7 +274,7 @@ std::string_view LogFile::filename() const {
     return std::string_view(log_file->filename.buf, log_file->filename.len);
 }
 
-Tracer::Tracer(const std::filesystem::path &path, std::initializer_list<std::string_view> header, size_t buffer_num_rows) {
+Tracer::Tracer(const std::filesystem::path &path, std::initializer_list<std::string_view> header, std::size_t buffer_num_rows) {
 #ifdef WIN32
     FILE *file = _wfopen(path.c_str(), L"wb");
 #else
@@ -295,7 +295,7 @@ Tracer::Tracer(const std::filesystem::path &path, std::initializer_list<std::str
     this->file = file;
 }
 
-Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> header, size_t buffer_num_rows) {
+Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> header, std::size_t buffer_num_rows) {
 #ifdef WIN32
     FILE *file = _wfopen(path.c_str(), L"wb");
 #else
@@ -316,14 +316,14 @@ Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> he
     this->file = file;
 }
 
-Tracer::Tracer(const LogFile &log_file, std::initializer_list<std::string_view> header, size_t buffer_num_rows) :
+Tracer::Tracer(const LogFile &log_file, std::initializer_list<std::string_view> header, std::size_t buffer_num_rows) :
     file(nullptr) {
     auto header_strview = htCsvWriter_header_to_htStrView(header);
     auto err = htTracer_new(&tracer, log_file.log_file->file, header_strview.get(), header.size(), buffer_num_rows);
     htCsvWriteError_throw(err);
 }
 
-Tracer::Tracer(const LogFile &log_file, std::span<std::string_view> header, size_t buffer_num_rows) :
+Tracer::Tracer(const LogFile &log_file, std::span<std::string_view> header, std::size_t buffer_num_rows) :
     file(nullptr) {
     auto header_strview = htCsvWriter_header_to_htStrView(header);
     auto err = htTracer_new(&tracer, log_file.log_file->file, header_strview.get(), header.size(), buffer_num_rows);
@@ -339,7 +339,7 @@ Tracer::~Tracer() {
 
 void Tracer::write_row(std::span<std::variant<std::string_view, std::string *>> columns) {
     auto line_buffer = std::make_unique_for_overwrite<htString[]>(columns.size());
-    for (size_t i = 0; i < columns.size(); i++) {
+    for (std::size_t i = 0; i < columns.size(); i++) {
         switch (columns[i].index()) {
         case 0: {
             std::string_view value = std::get<0>(columns[i]);

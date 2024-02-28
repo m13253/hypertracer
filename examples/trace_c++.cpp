@@ -21,7 +21,7 @@ struct ThreadParams {
     std::chrono::high_resolution_clock::time_point start;
     std::chrono::high_resolution_clock::time_point end;
     std::chrono::high_resolution_clock::duration interval;
-    uint64_t trace_per_batch;
+    std::uint64_t trace_per_batch;
 };
 
 static void thread_start(ThreadParams &params) {
@@ -30,7 +30,7 @@ static void thread_start(ThreadParams &params) {
         std::abort();
     }
 
-    for (uint64_t batch_id = 0;; batch_id++) {
+    for (std::uint64_t batch_id = 0;; batch_id++) {
         auto now = std::chrono::high_resolution_clock::now();
         if (now >= params.end) {
             break;
@@ -43,7 +43,7 @@ static void thread_start(ThreadParams &params) {
         auto sleep_nsec = interval_nsec - (diff % interval_nsec);
         std::this_thread::sleep_for(std::chrono::nanoseconds(sleep_nsec));
 
-        for (uint64_t trace_id = 0; trace_id < params.trace_per_batch; trace_id++) {
+        for (std::uint64_t trace_id = 0; trace_id < params.trace_per_batch; trace_id++) {
             std::array<std::variant<std::string_view, std::string *>, 3> trace;
             {
                 std::ostringstream ss;
@@ -67,17 +67,17 @@ int main() {
     auto end = start + std::chrono::seconds(10);
 
     std::array<ThreadParams, 16> params;
-    for (size_t i = 0; i < 16; i++) {
+    for (std::size_t i = 0; i < 16; i++) {
         params.at(i).tracer = &tracer;
         params.at(i).start = start;
         params.at(i).end = end;
-        params.at(i).interval = std::chrono::milliseconds(static_cast<int64_t>(i) + 1);
+        params.at(i).interval = std::chrono::milliseconds(static_cast<std::int64_t>(i) + 1);
         params.at(i).trace_per_batch = 5;
     }
-    for (size_t i = 0; i < 16; i++) {
+    for (std::size_t i = 0; i < 16; i++) {
         params.at(i).thread = std::thread(thread_start, std::ref(params.at(i)));
     }
-    for (size_t i = 0; i < 16; i++) {
+    for (std::size_t i = 0; i < 16; i++) {
         params.at(i).thread.join();
     }
 }

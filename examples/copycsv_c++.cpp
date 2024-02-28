@@ -17,11 +17,11 @@ int main(int argc, char *argv[]) {
     }
     auto reader = ht::CsvReader(std::filesystem::path(argv[1]));
 
-    size_t num_columns = reader.num_columns();
-    size_t num_empty_columns = 0;
+    std::size_t num_columns = reader.num_columns();
+    std::size_t num_empty_columns = 0;
     std::vector<std::string_view> column_names;
     column_names.reserve(num_columns);
-    for (size_t i = 0; i < num_columns; i++) {
+    for (std::size_t i = 0; i < num_columns; i++) {
         auto name = reader.column_name_by_index(i);
         // We want at most one empty column
         if (name.empty()) {
