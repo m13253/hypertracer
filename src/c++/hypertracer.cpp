@@ -337,6 +337,33 @@ Tracer::~Tracer() {
     }
 }
 
+void Tracer::write_row(std::initializer_list<std::variant<std::string_view, std::string *>> columns) {
+    auto line_buffer = std::make_unique_for_overwrite<htString[]>(columns.size());
+    std::size_t i = 0;
+    for (const auto &column : columns) {
+        switch (column.index()) {
+        case 0: {
+            std::string_view value = std::get<0>(column);
+            line_buffer[i].buf = const_cast<char *>(value.data());
+            line_buffer[i].len = value.length();
+            line_buffer[i].free_func = nullptr;
+            line_buffer[i].free_param = nullptr;
+            break;
+        }
+        case 1: {
+            std::string *managed_value = std::get<1>(column);
+            line_buffer[i].buf = managed_value->data();
+            line_buffer[i].len = managed_value->length();
+            line_buffer[i].free_func = htCsvWriter_free_managed_string;
+            line_buffer[i].free_param = managed_value;
+            break;
+        }
+        }
+        i++;
+    }
+    htTracer_write_row(tracer, line_buffer.get());
+}
+
 void Tracer::write_row(std::span<std::variant<std::string_view, std::string *>> columns) {
     auto line_buffer = std::make_unique_for_overwrite<htString[]>(columns.size());
     for (std::size_t i = 0; i < columns.size(); i++) {

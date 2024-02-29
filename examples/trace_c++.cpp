@@ -44,15 +44,13 @@ static void thread_start(ThreadParams &params) {
         std::this_thread::sleep_for(std::chrono::nanoseconds(sleep_nsec));
 
         for (std::uint64_t trace_id = 0; trace_id < params.trace_per_batch; trace_id++) {
-            std::array<std::variant<std::string_view, std::string *>, 3> trace;
-            {
-                std::ostringstream ss;
-                ss << std::this_thread::get_id();
-                trace.at(0).emplace<std::string *>(new std::string(ss.str()));
-            }
-            trace.at(1).emplace<std::string *>(new std::string(std::to_string(batch_id)));
-            trace.at(2).emplace<std::string *>(new std::string(std::to_string(trace_id)));
-            params.tracer->write_row(trace);
+            std::ostringstream ss;
+            ss << std::this_thread::get_id();
+            params.tracer->write_row({
+                new std::string(ss.str()),
+                new std::string(std::to_string(batch_id)),
+                new std::string(std::to_string(trace_id)),
+            });
         }
     }
 }

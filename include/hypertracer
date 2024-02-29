@@ -98,6 +98,7 @@ public:
     Tracer(Tracer &&) = default;
     ~Tracer();
 
+    void write_row(std::initializer_list<std::variant<std::string_view, std::string *>> columns);
     void write_row(std::span<std::variant<std::string_view, std::string *>> columns);
 
 private:

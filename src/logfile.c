@@ -21,7 +21,7 @@ HT_BOOL htLogFile_new(struct htLogFile *out, const char *prefix, size_t prefix_l
         }
     }
 
-    char *filename = malloc(prefix_len + suffix_max_len + 1);
+    char *filename = malloc(prefix_len + suffix_max_len);
     if (!filename) {
         abort();
     }
@@ -41,7 +41,7 @@ HT_BOOL htLogFile_new(struct htLogFile *out, const char *prefix, size_t prefix_l
             free(filename);
             abort();
         }
-        size_t suffix_len = strftime(&filename[prefix_len], suffix_max_len + 1, "_%Y-%m-%dT%H-%M-%SZ.csv", ptm);
+        size_t suffix_len = strftime(&filename[prefix_len], suffix_max_len, "_%Y-%m-%dT%H-%M-%SZ.csv", ptm);
         FILE *file = fopen(filename, "wxb");
         if (file) {
             out->file = file;
