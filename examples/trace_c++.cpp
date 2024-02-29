@@ -46,11 +46,7 @@ static void thread_start(ThreadParams &params) {
         for (std::uint64_t trace_id = 0; trace_id < params.trace_per_batch; trace_id++) {
             std::ostringstream ss;
             ss << std::this_thread::get_id();
-            params.tracer->write_row({
-                new std::string(ss.str()),
-                new std::string(std::to_string(batch_id)),
-                new std::string(std::to_string(trace_id)),
-            });
+            params.tracer->write_row({ss.str(), std::to_string(batch_id), std::to_string(trace_id)});
         }
     }
 }

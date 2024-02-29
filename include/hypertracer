@@ -54,10 +54,10 @@ private:
 
 class HYPERTRACER_CPLUSPLUS_PUBLIC CsvWriter final {
 public:
-    explicit CsvWriter(const std::filesystem::path &path, std::initializer_list<std::string_view> header);
-    explicit CsvWriter(const std::filesystem::path &path, std::span<std::string_view> header);
-    explicit CsvWriter(const LogFile &log_file, std::initializer_list<std::string_view> header);
-    explicit CsvWriter(const LogFile &log_file, std::span<std::string_view> header);
+    explicit CsvWriter(const std::filesystem::path &path, std::initializer_list<const std::string_view> header);
+    explicit CsvWriter(const std::filesystem::path &path, std::span<const std::string_view> header);
+    explicit CsvWriter(const LogFile &log_file, std::initializer_list<const std::string_view> header);
+    explicit CsvWriter(const LogFile &log_file, std::span<const std::string_view> header);
     CsvWriter(const CsvWriter &) = delete;
     CsvWriter(CsvWriter &&) = default;
     ~CsvWriter();
@@ -90,16 +90,16 @@ private:
 
 class HYPERTRACER_CPLUSPLUS_PUBLIC Tracer final {
 public:
-    explicit Tracer(const std::filesystem::path &path, std::initializer_list<std::string_view> header, std::size_t buffer_num_rows = 4096);
-    explicit Tracer(const std::filesystem::path &path, std::span<std::string_view> header, std::size_t buffer_num_rows = 4096);
-    explicit Tracer(const LogFile &log_file, std::initializer_list<std::string_view> header, std::size_t buffer_num_rows = 4096);
-    explicit Tracer(const LogFile &log_file, std::span<std::string_view> header, std::size_t buffer_num_rows = 4096);
+    explicit Tracer(const std::filesystem::path &path, std::initializer_list<const std::string_view> header, std::size_t buffer_num_rows = 4096);
+    explicit Tracer(const std::filesystem::path &path, std::span<const std::string_view> header, std::size_t buffer_num_rows = 4096);
+    explicit Tracer(const LogFile &log_file, std::initializer_list<const std::string_view> header, std::size_t buffer_num_rows = 4096);
+    explicit Tracer(const LogFile &log_file, std::span<const std::string_view> header, std::size_t buffer_num_rows = 4096);
     Tracer(const Tracer &) = delete;
     Tracer(Tracer &&) = default;
     ~Tracer();
 
-    void write_row(std::initializer_list<std::variant<std::string_view, std::string *>> columns);
-    void write_row(std::span<std::variant<std::string_view, std::string *>> columns);
+    void write_row(std::initializer_list<const std::variant<std::string, std::string_view>> columns);
+    void write_row(std::span<const std::variant<std::string, std::string_view>> columns);
 
 private:
     htTracer *tracer;

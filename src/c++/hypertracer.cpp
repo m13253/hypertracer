@@ -86,10 +86,10 @@ std::optional<std::string_view> CsvReader::value_by_column_name(std::string_view
 
 static void htCsvWriteError_throw(htCsvWriteError &err);
 
-static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::initializer_list<std::string_view> header);
-static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::span<std::string_view> header);
+static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::initializer_list<const std::string_view> header);
+static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::span<const std::string_view> header);
 
-CsvWriter::CsvWriter(const std::filesystem::path &path, std::initializer_list<std::string_view> header) {
+CsvWriter::CsvWriter(const std::filesystem::path &path, std::initializer_list<const std::string_view> header) {
 #ifdef WIN32
     FILE *file = _wfopen(path.c_str(), L"wb");
 #else
@@ -110,7 +110,7 @@ CsvWriter::CsvWriter(const std::filesystem::path &path, std::initializer_list<st
     this->file = file;
 }
 
-CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_view> header) {
+CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<const std::string_view> header) {
 #ifdef WIN32
     FILE *file = _wfopen(path.c_str(), L"wb");
 #else
@@ -131,21 +131,21 @@ CsvWriter::CsvWriter(const std::filesystem::path &path, std::span<std::string_vi
     this->file = file;
 }
 
-CsvWriter::CsvWriter(const LogFile &log_file, std::initializer_list<std::string_view> header) :
+CsvWriter::CsvWriter(const LogFile &log_file, std::initializer_list<const std::string_view> header) :
     file(nullptr) {
     auto header_strview = htCsvWriter_header_to_htStrView(header);
     auto err = htCsvWriter_new(&writer, log_file.log_file->file, header_strview.get(), header.size());
     htCsvWriteError_throw(err);
 }
 
-CsvWriter::CsvWriter(const LogFile &log_file, std::span<std::string_view> header) :
+CsvWriter::CsvWriter(const LogFile &log_file, std::span<const std::string_view> header) :
     file(nullptr) {
     auto header_strview = htCsvWriter_header_to_htStrView(header);
     auto err = htCsvWriter_new(&writer, log_file.log_file->file, header_strview.get(), header.size());
     htCsvWriteError_throw(err);
 }
 
-static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::initializer_list<std::string_view> header) {
+static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::initializer_list<const std::string_view> header) {
     auto result = std::make_unique_for_overwrite<htStrView[]>(header.size());
     std::size_t i = 0;
     for (const auto &column : header) {
@@ -156,7 +156,7 @@ static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::initial
     return result;
 }
 
-static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::span<std::string_view> header) {
+static std::unique_ptr<htStrView[]> htCsvWriter_header_to_htStrView(std::span<const std::string_view> header) {
     auto result = std::make_unique_for_overwrite<htStrView[]>(header.size());
     for (std::size_t i = 0; i < header.size(); i++) {
         result[i].buf = header[i].data();
@@ -274,7 +274,7 @@ std::string_view LogFile::filename() const {
     return std::string_view(log_file->filename.buf, log_file->filename.len);
 }
 
-Tracer::Tracer(const std::filesystem::path &path, std::initializer_list<std::string_view> header, std::size_t buffer_num_rows) {
+Tracer::Tracer(const std::filesystem::path &path, std::initializer_list<const std::string_view> header, std::size_t buffer_num_rows) {
 #ifdef WIN32
     FILE *file = _wfopen(path.c_str(), L"wb");
 #else
@@ -295,7 +295,7 @@ Tracer::Tracer(const std::filesystem::path &path, std::initializer_list<std::str
     this->file = file;
 }
 
-Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> header, std::size_t buffer_num_rows) {
+Tracer::Tracer(const std::filesystem::path &path, std::span<const std::string_view> header, std::size_t buffer_num_rows) {
 #ifdef WIN32
     FILE *file = _wfopen(path.c_str(), L"wb");
 #else
@@ -316,14 +316,14 @@ Tracer::Tracer(const std::filesystem::path &path, std::span<std::string_view> he
     this->file = file;
 }
 
-Tracer::Tracer(const LogFile &log_file, std::initializer_list<std::string_view> header, std::size_t buffer_num_rows) :
+Tracer::Tracer(const LogFile &log_file, std::initializer_list<const std::string_view> header, std::size_t buffer_num_rows) :
     file(nullptr) {
     auto header_strview = htCsvWriter_header_to_htStrView(header);
     auto err = htTracer_new(&tracer, log_file.log_file->file, header_strview.get(), header.size(), buffer_num_rows);
     htCsvWriteError_throw(err);
 }
 
-Tracer::Tracer(const LogFile &log_file, std::span<std::string_view> header, std::size_t buffer_num_rows) :
+Tracer::Tracer(const LogFile &log_file, std::span<const std::string_view> header, std::size_t buffer_num_rows) :
     file(nullptr) {
     auto header_strview = htCsvWriter_header_to_htStrView(header);
     auto err = htTracer_new(&tracer, log_file.log_file->file, header_strview.get(), header.size(), buffer_num_rows);
@@ -337,25 +337,25 @@ Tracer::~Tracer() {
     }
 }
 
-void Tracer::write_row(std::initializer_list<std::variant<std::string_view, std::string *>> columns) {
+void Tracer::write_row(std::initializer_list<const std::variant<std::string, std::string_view>> columns) {
     auto line_buffer = std::make_unique_for_overwrite<htString[]>(columns.size());
     std::size_t i = 0;
     for (const auto &column : columns) {
         switch (column.index()) {
         case 0: {
-            std::string_view value = std::get<0>(column);
-            line_buffer[i].buf = const_cast<char *>(value.data());
-            line_buffer[i].len = value.length();
-            line_buffer[i].free_func = nullptr;
-            line_buffer[i].free_param = nullptr;
-            break;
-        }
-        case 1: {
-            std::string *managed_value = std::get<1>(column);
+            std::string *managed_value = new std::string(std::get<0>(column));
             line_buffer[i].buf = managed_value->data();
             line_buffer[i].len = managed_value->length();
             line_buffer[i].free_func = htCsvWriter_free_managed_string;
             line_buffer[i].free_param = managed_value;
+            break;
+        }
+        case 1: {
+            std::string_view value = std::get<1>(column);
+            line_buffer[i].buf = const_cast<char *>(value.data());
+            line_buffer[i].len = value.length();
+            line_buffer[i].free_func = nullptr;
+            line_buffer[i].free_param = nullptr;
             break;
         }
         }
@@ -364,24 +364,24 @@ void Tracer::write_row(std::initializer_list<std::variant<std::string_view, std:
     htTracer_write_row(tracer, line_buffer.get());
 }
 
-void Tracer::write_row(std::span<std::variant<std::string_view, std::string *>> columns) {
+void Tracer::write_row(std::span<const std::variant<std::string, std::string_view>> columns) {
     auto line_buffer = std::make_unique_for_overwrite<htString[]>(columns.size());
     for (std::size_t i = 0; i < columns.size(); i++) {
         switch (columns[i].index()) {
         case 0: {
-            std::string_view value = std::get<0>(columns[i]);
-            line_buffer[i].buf = const_cast<char *>(value.data());
-            line_buffer[i].len = value.length();
-            line_buffer[i].free_func = nullptr;
-            line_buffer[i].free_param = nullptr;
-            break;
-        }
-        case 1: {
-            std::string *managed_value = std::get<1>(columns[i]);
+            std::string *managed_value = new std::string(std::get<0>(columns[i]));
             line_buffer[i].buf = managed_value->data();
             line_buffer[i].len = managed_value->length();
             line_buffer[i].free_func = htCsvWriter_free_managed_string;
             line_buffer[i].free_param = managed_value;
+            break;
+        }
+        case 1: {
+            std::string_view value = std::get<1>(columns[i]);
+            line_buffer[i].buf = const_cast<char *>(value.data());
+            line_buffer[i].len = value.length();
+            line_buffer[i].free_func = nullptr;
+            line_buffer[i].free_param = nullptr;
             break;
         }
         }
