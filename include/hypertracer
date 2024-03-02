@@ -1,109 +1,31 @@
-#ifndef HYPERTRACER_CPLUSPLUS
-#define HYPERTRACER_CPLUSPLUS
+#ifndef INCLUDE_HYPERTRACER
+#define INCLUDE_HYPERTRACER
 
-#include <cstddef>
-#include <filesystem>
-#include <initializer_list>
-#include <optional>
-#include <span>
-#include <string>
-#include <string_view>
-#include <variant>
-
-#if defined _WIN32 || defined __CYGWIN__
-#ifdef BUILDING_HYPERTRACER_CPLUSPLUS
-#define HYPERTRACER_CPLUSPLUS_PUBLIC __declspec(dllexport)
-#else
-#define HYPERTRACER_CPLUSPLUS_PUBLIC __declspec(dllimport)
-#endif
-#else
-#ifdef BUILDING_HYPERTRACER_CPLUSPLUS
-#define HYPERTRACER_CPLUSPLUS_PUBLIC __attribute__((visibility("default")))
-#else
-#define HYPERTRACER_CPLUSPLUS_PUBLIC
-#endif
-#endif
-
-struct htCsvReader;
-struct htCsvWriter;
-struct htLogFile;
-struct htTracer;
+#include "mpsc"
 
 namespace ht {
 
-class HYPERTRACER_CPLUSPLUS_PUBLIC LogFile;
-
-class HYPERTRACER_CPLUSPLUS_PUBLIC CsvReader final {
+class Tracer final {
 public:
-    explicit CsvReader(const std::filesystem::path &path);
-    CsvReader(const CsvReader &) = delete;
-    CsvReader(CsvReader &&) = default;
-    ~CsvReader();
-
-    void read_row(bool &eof);
-    std::size_t num_columns() const;
-    std::string_view column_name_by_index(std::size_t column) const;
-    std::optional<std::size_t> column_index_by_name(std::string_view column) const;
-    std::string_view value_by_column_index(std::size_t column) const;
-    std::optional<std::string_view> value_by_column_name(std::string_view column) const;
-
 private:
-    htCsvReader *reader;
-    void *file;
+    bool is_open;
+    int fd;
 };
 
-class HYPERTRACER_CPLUSPLUS_PUBLIC CsvWriter final {
+class Trace final {
 public:
-    explicit CsvWriter(const std::filesystem::path &path, std::initializer_list<const std::string_view> header);
-    explicit CsvWriter(const std::filesystem::path &path, std::span<const std::string_view> header);
-    explicit CsvWriter(const LogFile &log_file, std::initializer_list<const std::string_view> header);
-    explicit CsvWriter(const LogFile &log_file, std::span<const std::string_view> header);
-    CsvWriter(const CsvWriter &) = delete;
-    CsvWriter(CsvWriter &&) = default;
-    ~CsvWriter();
-
-    void set_string_by_column_index(std::size_t column, std::string &&value);
-    void set_strview_by_column_index(std::size_t column, std::string_view value);
-    void set_string_by_column_name(std::string_view column, std::string &&value);
-    void set_strview_by_column_name(std::string_view column, std::string_view value);
-    void write_row();
-
-private:
-    htCsvWriter *writer;
-    void *file;
 };
 
-class HYPERTRACER_CPLUSPLUS_PUBLIC LogFile final {
-    friend class CsvWriter;
-    friend class Tracer;
-
+class PayloadArray final {
 public:
-    explicit LogFile(std::string_view prefix, unsigned num_retries = 10);
-    LogFile(const LogFile &) = delete;
-    LogFile(LogFile &&) = default;
-    ~LogFile();
-    std::string_view filename() const;
-
-private:
-    htLogFile *log_file;
 };
 
-class HYPERTRACER_CPLUSPLUS_PUBLIC Tracer final {
+class PayloadObject final {
 public:
-    explicit Tracer(const std::filesystem::path &path, std::initializer_list<const std::string_view> header, std::size_t buffer_num_rows = 4096);
-    explicit Tracer(const std::filesystem::path &path, std::span<const std::string_view> header, std::size_t buffer_num_rows = 4096);
-    explicit Tracer(const LogFile &log_file, std::initializer_list<const std::string_view> header, std::size_t buffer_num_rows = 4096);
-    explicit Tracer(const LogFile &log_file, std::span<const std::string_view> header, std::size_t buffer_num_rows = 4096);
-    Tracer(const Tracer &) = delete;
-    Tracer(Tracer &&) = default;
-    ~Tracer();
+};
 
-    void write_row(std::initializer_list<const std::variant<std::string, std::string_view>> columns);
-    void write_row(std::span<const std::variant<std::string, std::string_view>> columns);
-
-private:
-    htTracer *tracer;
-    void *file;
+class PayloadValue final {
+public:
 };
 
 } // namespace ht

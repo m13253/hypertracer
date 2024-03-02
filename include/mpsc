@@ -1,0 +1,285 @@
+#ifndef INCLUDE_HYPERTRACER_MPSC
+#define INCLUDE_HYPERTRACER_MPSC
+
+#include <array>
+#include <atomic>
+#include <cassert>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <utility>
+#include <variant>
+
+namespace ht {
+namespace mpsc {
+
+template <typename T>
+class Reader;
+
+template <typename T>
+class Writer;
+
+template <typename T>
+class Reader final {
+    friend class Writer<T>;
+
+private:
+    static constexpr std::size_t Align = 64;
+
+    enum class SlotStatus : std::uint_fast8_t {
+        Empty = 0,
+        Value = 1,
+        Closing = 2
+    };
+
+    class Slot final {
+    public:
+        std::atomic_uint_fast8_t status = std::underlying_type_t<SlotStatus>(SlotStatus::Empty);
+        alignas(T) std::array<std::byte, sizeof(T)> msg = {};
+    };
+
+private:
+    Reader(std::size_t cap) noexcept :
+        buffer(std::make_unique<Slot[]>(cap)),
+        cap(cap) {
+    }
+
+public:
+    ~Reader() noexcept {
+        std::size_t num_writers = this->num_writers.load(std::memory_order::acquire);
+
+        while (num_writers != 0) {
+            auto [slot, status] = before_read();
+
+            if (status == SlotStatus::Value) {
+                // Destroy the data
+                T &msg = *std::launder(reinterpret_cast<T *>(slot.msg.data()));
+                msg.~T();
+            } else if (status == SlotStatus::Closing) {
+                num_writers = this->num_writers.fetch_sub(1, std::memory_order::acquire) - 1;
+            }
+
+            after_read(slot);
+        }
+    }
+
+public:
+    Writer<T> new_writer() noexcept {
+        return Writer<T>(*this);
+    }
+
+private:
+    std::pair<Slot &, SlotStatus> before_read() noexcept {
+        Slot &slot = buffer[front];
+        SlotStatus status;
+
+        {
+            std::unique_lock lock_read(mtx_read);
+            // Tell the writing thread we may need a wake-up
+            bool is_reading_false = false;
+            if (!is_reading.compare_exchange_strong(is_reading_false, true, std::memory_order::relaxed, std::memory_order::relaxed)) {
+                std::fputs("panic: ht::mpsc::Reader::read: more than one threads are reading\n", stderr);
+                std::terminate();
+            }
+            status = SlotStatus(slot.status.load(std::memory_order::acquire));
+            // Test if the front element is ready.
+            while (status == SlotStatus::Empty) {
+                cnd_read.wait(lock_read);
+                status = SlotStatus(slot.status.load(std::memory_order::acquire));
+            }
+            is_reading.store(false, std::memory_order::relaxed);
+        }
+
+        return {std::ref(slot), status};
+    }
+
+public:
+    std::optional<T> read() noexcept {
+        std::optional<T> result;
+        std::size_t num_writers = this->num_writers.load(std::memory_order::acquire);
+
+        while (result.has_value() || num_writers != 0) {
+            auto [slot, status] = before_read();
+
+            if (status == SlotStatus::Value) {
+                // Move the data
+                T &msg = *std::launder(reinterpret_cast<T *>(slot.msg.data()));
+                result.emplace(std::move(msg));
+                msg.~T();
+            } else if (status == SlotStatus::Closing) {
+                num_writers = this->num_writers.fetch_sub(1, std::memory_order::acquire) - 1;
+            }
+
+            after_read(slot);
+        }
+        return result;
+    }
+
+private:
+    void after_read(Slot &slot) noexcept {
+        slot.status.store(std::underlying_type_t<SlotStatus>(SlotStatus::Empty), std::memory_order::relaxed);
+        // Release an index to front
+        front = front != cap ? front + 1 : 0;
+
+        {
+            std::unique_lock lock_write(mtx_write);
+            // Release a slot
+            size.fetch_sub(1, std::memory_order::release);
+            // Wake up the writing thread
+            cnd_write.notify_one();
+        }
+    }
+
+private:
+    std::mutex mtx_read;
+    std::mutex mtx_write;
+    std::condition_variable cnd_read;
+    std::condition_variable cnd_write;
+    std::atomic_size_t size = 0;
+    std::atomic_size_t back = 0;
+    std::atomic_size_t num_writers = 0;
+    std::atomic_bool has_blocked = false;
+    std::atomic_bool is_reading = false;
+
+    alignas(Align) std::unique_ptr<Slot[]> buffer;
+    std::size_t cap;
+    std::size_t front = 0;
+};
+
+template <typename T>
+class Writer final {
+    friend class Reader<T>;
+
+private:
+    typedef Reader<T>::SlotStatus SlotStatus;
+    typedef Reader<T>::Slot Slot;
+
+    explicit Writer(Reader<T> &reader) noexcept :
+        r(&reader) {
+        r->num_writers.fetch_add(1, std::memory_order::release);
+    }
+
+public:
+    explicit Writer(const Writer &other) noexcept :
+        r(other.r) {
+        r->num_writers.fetch_add(1, std::memory_order::release);
+    }
+
+    explicit Writer(Writer &&other) noexcept = default;
+
+    ~Writer() noexcept {
+        close();
+    }
+
+    Writer &operator=(const Writer &other) noexcept {
+        other.r->num_writers.fetch_add(1, std::memory_order::release);
+        close();
+        r = other.r;
+        return *this;
+    }
+
+    Writer &operator=(Writer &&other) noexcept = default;
+
+private:
+    static std::size_t before_write(Reader<T> &r) noexcept {
+        std::atomic_size_t &atomic_size = r.size;
+        std::size_t cap = r.cap;
+
+        std::size_t size = atomic_size.load(std::memory_order::relaxed);
+        bool acquired = false;
+        while (!acquired) {
+            if (size >= cap) {
+                // Queue is full
+                r.has_blocked.store(true, std::memory_order::relaxed);
+                std::unique_lock lock_write(r.mtx_write);
+                while (!acquired) {
+                    if (size >= cap) {
+                        r.cnd_write.wait(lock_write);
+                        size = atomic_size.load(std::memory_order::relaxed);
+                    } else {
+                        // Acquire a slot (slow path)
+                        acquired = atomic_size.compare_exchange_weak(size, size + 1, std::memory_order::acquire, std::memory_order::relaxed);
+#if defined(__amd64__) || defined(__i386__)
+                        if (!acquired) {
+                            __builtin_ia32_pause();
+                        }
+#endif
+                    }
+                }
+            } else {
+                // Acquire a slot (fast path)
+                acquired = atomic_size.compare_exchange_weak(size, size + 1, std::memory_order::acquire, std::memory_order::relaxed);
+#if defined(__amd64__) || defined(__i386__)
+                if (!acquired) {
+                    __builtin_ia32_pause();
+                }
+#endif
+            }
+        }
+        // Allocate an index from back
+        std::atomic_size_t &atomic_back = r.back;
+        std::size_t back = atomic_back.fetch_add(1, std::memory_order::relaxed);
+        if (back >= cap) {
+            // Wrap around
+            std::size_t back_wrap = back;
+            back %= cap;
+            // Either we successfully wrapped the index,
+            // or we can verify another thread wrapped it
+            while (
+                !atomic_back.compare_exchange_weak(back_wrap, back_wrap % cap, std::memory_order::relaxed, std::memory_order::relaxed) &&
+                back_wrap >= cap
+            ) {
+#if defined(__amd64__) || defined(__i386__)
+                __builtin_ia32_pause();
+#endif
+            }
+            // Now, back_wrap stores the *latest* back index,
+            // which may not be the index allocated for us.
+            // We must discard back_wrap now.
+        }
+        return back;
+    }
+
+public:
+    void write(T &&msg) noexcept {
+        Reader<T> &r = *this->r;
+        std::size_t back = before_write(r);
+        Slot &slot = r.buffer[back];
+        new (slot.msg.data()) T(std::move(msg));
+        after_write(r, slot, SlotStatus::Value);
+    }
+
+private:
+    void close() noexcept {
+        Reader<T> &r = *this->r;
+        std::size_t back = before_write(r);
+        Slot &slot = r.buffer[back];
+        after_write(r, slot, SlotStatus::Closing);
+    }
+
+    static void after_write(Reader<T> &r, Slot &slot, SlotStatus status) noexcept {
+        // Set the status
+        auto status_empty = std::underlying_type_t<SlotStatus>(SlotStatus::Empty);
+        if (!slot.status.compare_exchange_strong(status_empty, std::underlying_type_t<SlotStatus>(status), std::memory_order::release, std::memory_order::relaxed)) {
+            std::fputs("panic: ht::mpsc::Writer::after_write: memory corruption\n", stderr);
+            std::terminate();
+        }
+        // Wake up the reading thread
+        if (r.is_reading.load(std::memory_order::relaxed)) {
+            std::unique_lock lock_read(r.mtx_read);
+            r.cnd_read.notify_one();
+        }
+    }
+
+private:
+    Reader<T> *r;
+};
+
+} // namespace mpsc
+} // namespace ht
+
+#endif
