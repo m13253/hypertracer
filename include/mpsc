@@ -55,12 +55,19 @@ public:
         while (num_writers != 0) {
             auto [slot, status] = before_read();
 
-            if (status == SlotStatus::Value) {
+            switch (status) {
+            case SlotStatus::Empty:
+                __builtin_unreachable();
+                break;
+            case SlotStatus::Value: {
                 // Destroy the data
                 T &msg = *std::launder(reinterpret_cast<T *>(slot.msg.data()));
                 msg.~T();
-            } else if (status == SlotStatus::Closing) {
+                break;
+            }
+            case SlotStatus::Closing:
                 num_writers = this->num_writers.fetch_sub(1, std::memory_order::acquire) - 1;
+                break;
             }
 
             after_read(slot);
@@ -102,16 +109,23 @@ public:
         std::optional<T> result;
         std::size_t num_writers = this->num_writers.load(std::memory_order::acquire);
 
-        while (result.has_value() || num_writers != 0) {
+        while (!result.has_value() || num_writers != 0) {
             auto [slot, status] = before_read();
 
-            if (status == SlotStatus::Value) {
+            switch (status) {
+            case SlotStatus::Empty:
+                __builtin_unreachable();
+                break;
+            case SlotStatus::Value: {
                 // Move the data
                 T &msg = *std::launder(reinterpret_cast<T *>(slot.msg.data()));
                 result.emplace(std::move(msg));
                 msg.~T();
-            } else if (status == SlotStatus::Closing) {
+                break;
+            }
+            case SlotStatus::Closing:
                 num_writers = this->num_writers.fetch_sub(1, std::memory_order::acquire) - 1;
+                break;
             }
 
             after_read(slot);
@@ -185,7 +199,7 @@ public:
     Writer &operator=(Writer &&other) noexcept = default;
 
 private:
-    static std::size_t before_write(Reader<T> &r) noexcept {
+    static Slot &before_write(Reader<T> &r) noexcept {
         std::atomic_size_t &atomic_size = r.size;
         std::size_t cap = r.cap;
 
@@ -241,14 +255,13 @@ private:
             // which may not be the index allocated for us.
             // We must discard back_wrap now.
         }
-        return back;
+        return r.buffer[back];
     }
 
 public:
     void write(T &&msg) noexcept {
         Reader<T> &r = *this->r;
-        std::size_t back = before_write(r);
-        Slot &slot = r.buffer[back];
+        Slot &slot = before_write(r);
         new (slot.msg.data()) T(std::move(msg));
         after_write(r, slot, SlotStatus::Value);
     }
@@ -256,8 +269,7 @@ public:
 private:
     void close() noexcept {
         Reader<T> &r = *this->r;
-        std::size_t back = before_write(r);
-        Slot &slot = r.buffer[back];
+        Slot &slot = before_write(r);
         after_write(r, slot, SlotStatus::Closing);
     }
 
