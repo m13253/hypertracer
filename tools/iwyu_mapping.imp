@@ -1,0 +1,12 @@
+[
+    { symbol: [ "errno", private, "<cerrno>", public ] },
+    { symbol: [ "mkostemps", private, "<stdlib.h>", public ] },
+    { symbol: [ "O_CLOEXEC", private, "<fcntl.h>", public ] },
+    { symbol: [ "std::condition_variable", private, "<condition_variable>", public ] },
+    { symbol: [ "std::generic_category", private, "<system_error>", public ] },
+    { symbol: [ "std::mutex", private, "<mutex>", public ] },
+    { symbol: [ "std::string_view", private, "<string_view>", public ] },
+    { symbol: [ "std::system_error", private, "<system_error>", public ] },
+    { symbol: [ "std::terminate", private, "<exception>", public ] },
+    { symbol: [ "std::unique_lock", private, "<mutex>", public ] },
+]

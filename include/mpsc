@@ -8,17 +8,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
+#include <type_traits>
 #include <utility>
-#include <variant>
 
 namespace ht {
+namespace internal {
 namespace mpsc {
-
-template <typename T>
-class Reader;
 
 template <typename T>
 class Writer;
@@ -46,13 +47,14 @@ private:
     Reader(std::size_t cap) noexcept :
         buffer(std::make_unique<Slot[]>(cap)),
         cap(cap) {
+        assert(cap != 0);
     }
 
 public:
     ~Reader() noexcept {
-        std::size_t num_writers = this->num_writers.load(std::memory_order::acquire);
+        std::size_t writer_count = this->writer_count.load(std::memory_order::acquire);
 
-        while (num_writers != 0) {
+        while (writer_count != 0) {
             auto [slot, status] = before_read();
 
             switch (status) {
@@ -66,7 +68,7 @@ public:
                 break;
             }
             case SlotStatus::Closing:
-                num_writers = this->num_writers.fetch_sub(1, std::memory_order::acquire) - 1;
+                writer_count = this->writer_count.fetch_sub(1, std::memory_order::acquire) - 1;
                 break;
             }
 
@@ -75,6 +77,10 @@ public:
     }
 
 public:
+    typename std::atomic_unsigned_lock_free::value_type get_stall_count() const noexcept {
+        return stall_count.load(std::memory_order::relaxed);
+    }
+
     Writer<T> new_writer() noexcept {
         return Writer<T>(*this);
     }
@@ -89,7 +95,7 @@ private:
             // Tell the writing thread we may need a wake-up
             bool is_reading_false = false;
             if (!is_reading.compare_exchange_strong(is_reading_false, true, std::memory_order::relaxed, std::memory_order::relaxed)) {
-                std::fputs("panic: ht::mpsc::Reader::read: more than one threads are reading\n", stderr);
+                std::fputs("panic: ht::internal::mpsc::Reader::before_read: more than one threads are reading\n", stderr);
                 std::terminate();
             }
             status = SlotStatus(slot.status.load(std::memory_order::acquire));
@@ -107,9 +113,9 @@ private:
 public:
     std::optional<T> read() noexcept {
         std::optional<T> result;
-        std::size_t num_writers = this->num_writers.load(std::memory_order::acquire);
+        std::size_t writer_count = this->writer_count.load(std::memory_order::acquire);
 
-        while (!result.has_value() || num_writers != 0) {
+        while (!result.has_value() || writer_count != 0) {
             auto [slot, status] = before_read();
 
             switch (status) {
@@ -124,7 +130,7 @@ public:
                 break;
             }
             case SlotStatus::Closing:
-                num_writers = this->num_writers.fetch_sub(1, std::memory_order::acquire) - 1;
+                writer_count = this->writer_count.fetch_sub(1, std::memory_order::acquire) - 1;
                 break;
             }
 
@@ -155,8 +161,8 @@ private:
     std::condition_variable cnd_write;
     std::atomic_size_t size = 0;
     std::atomic_size_t back = 0;
-    std::atomic_size_t num_writers = 0;
-    std::atomic_bool has_blocked = false;
+    std::atomic_size_t writer_count = 0;
+    std::atomic_unsigned_lock_free stall_count = 0;
     std::atomic_bool is_reading = false;
 
     alignas(Align) std::unique_ptr<Slot[]> buffer;
@@ -174,13 +180,13 @@ private:
 
     explicit Writer(Reader<T> &reader) noexcept :
         r(&reader) {
-        r->num_writers.fetch_add(1, std::memory_order::release);
+        r->writer_count.fetch_add(1, std::memory_order::release);
     }
 
 public:
     explicit Writer(const Writer &other) noexcept :
         r(other.r) {
-        r->num_writers.fetch_add(1, std::memory_order::release);
+        r->writer_count.fetch_add(1, std::memory_order::release);
     }
 
     explicit Writer(Writer &&other) noexcept = default;
@@ -190,7 +196,7 @@ public:
     }
 
     Writer &operator=(const Writer &other) noexcept {
-        other.r->num_writers.fetch_add(1, std::memory_order::release);
+        other.r->writer_count.fetch_add(1, std::memory_order::release);
         close();
         r = other.r;
         return *this;
@@ -208,7 +214,7 @@ private:
         while (!acquired) {
             if (size >= cap) {
                 // Queue is full
-                r.has_blocked.store(true, std::memory_order::relaxed);
+                r.stall_count.fetch_add(1, std::memory_order::relaxed);
                 std::unique_lock lock_write(r.mtx_write);
                 while (!acquired) {
                     if (size >= cap) {
@@ -292,6 +298,7 @@ private:
 };
 
 } // namespace mpsc
+} // namespace internal
 } // namespace ht
 
 #endif

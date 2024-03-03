@@ -1,0 +1,56 @@
+#ifndef INCLUDE_HYPERTRACER_FILE
+#define INCLUDE_HYPERTRACER_FILE
+
+#include <cstddef>
+#include <exception>
+#include <memory>
+#include <span>
+#include <string>
+#include <string_view>
+
+namespace ht {
+namespace internal {
+namespace file {
+
+class TempFile final {
+public:
+    TempFile(std::string_view prefix, std::string_view suffix, std::size_t buffer_size = 4096);
+
+    ~TempFile() noexcept(false);
+
+    std::size_t flush() {
+        if (fail) {
+            std::terminate();
+        }
+        return do_flush();
+    }
+
+private:
+    std::size_t do_flush();
+
+public:
+    int get_fd() const noexcept {
+        return fd;
+    }
+
+    const std::string &get_filename() const noexcept {
+        return filename;
+    }
+
+    std::size_t write(std::span<const std::byte> data);
+
+private:
+    std::unique_ptr<std::byte[]> buf;
+    std::size_t buf_front = 0;
+    std::size_t buf_back = 0;
+    std::size_t buf_cap;
+    std::string filename;
+    int fd;
+    int fail = false;
+};
+
+} // namespace file
+} // namespace internal
+} // namespace ht
+
+#endif

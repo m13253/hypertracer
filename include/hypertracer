@@ -1,6 +1,7 @@
 #ifndef INCLUDE_HYPERTRACER
 #define INCLUDE_HYPERTRACER
 
+#include "file"
 #include "mpsc"
 
 namespace ht {
@@ -8,8 +9,6 @@ namespace ht {
 class Tracer final {
 public:
 private:
-    bool is_open;
-    int fd;
 };
 
 class Trace final {

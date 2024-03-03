@@ -4,6 +4,7 @@ project('hypertracer', ['cpp'],
 )
 
 sources = [
+  'src/file.cpp',
   'src/mpsc.cpp',
 ]
 install_headers(
