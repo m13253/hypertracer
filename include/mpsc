@@ -17,6 +17,25 @@
 #include <type_traits>
 #include <utility>
 
+#if !defined(__SANITIZE_THREAD__) && defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define __SANITIZE_THREAD__ 1
+#endif
+#endif
+#ifdef __SANITIZE_THREAD__
+extern "C" {
+void AnnotateIgnoreWritesBegin(const char *f, int l);
+void AnnotateIgnoreWritesEnd(const char *f, int l);
+}
+#define TSAN_ANNOTATE_IGNORE_WRITES_BEGIN() \
+    AnnotateIgnoreWritesBegin(__FILE__, __LINE__)
+#define TSAN_ANNOTATE_IGNORE_WRITES_END() \
+    AnnotateIgnoreWritesEnd(__FILE__, __LINE__)
+#else
+#define TSAN_ANNOTATE_IGNORE_WRITES_BEGIN()
+#define TSAN_ANNOTATE_IGNORE_WRITES_END()
+#endif
+
 namespace ht {
 namespace internal {
 namespace mpsc {
@@ -103,9 +122,11 @@ public:
                 break;
             case SlotStatus::Value: {
                 // Move the data
-                T &msg = *std::launder(reinterpret_cast<T *>(slot.msg.data()));
-                result.emplace(std::move(msg));
-                msg.~T();
+                T *msg = std::launder(reinterpret_cast<T *>(slot.msg.data()));
+                TSAN_ANNOTATE_IGNORE_WRITES_BEGIN();
+                result.emplace(std::move(*msg));
+                msg->~T();
+                TSAN_ANNOTATE_IGNORE_WRITES_END();
                 break;
             }
             case SlotStatus::Closing:
@@ -226,10 +247,12 @@ private:
         // Allocate an index from back
         std::atomic_size_t &atomic_back = r.back;
         std::size_t back = atomic_back.fetch_add(1, std::memory_order::relaxed);
-        if (back >= cap) {
+        if (back + 1 >= cap) {
             // Wrap around
-            std::size_t back_wrap = back;
-            back %= cap;
+            std::size_t back_wrap = back + 1;
+            if (back >= cap) {
+                back %= cap;
+            }
             // Either we successfully wrapped the index,
             // or we can verify another thread wrapped it
             while (
@@ -251,7 +274,9 @@ public:
     void write(T &&msg) noexcept {
         Reader<T> &r = *this->r;
         Slot &slot = before_write(r);
+        TSAN_ANNOTATE_IGNORE_WRITES_BEGIN();
         new (slot.msg.data()) T(std::move(msg));
+        TSAN_ANNOTATE_IGNORE_WRITES_END();
         after_write(r, slot, SlotStatus::Value);
     }
 

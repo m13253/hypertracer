@@ -387,6 +387,11 @@ public:
         parent(parent), key(std::in_place, std::move(key)), value(std::in_place_index<8>, value) {
     }
 
+    Value(const Value &) = delete;
+    Value(Value &&) = default;
+    Value &operator=(const Value &) = delete;
+    Value &operator=(Value &&) = default;
+
     std::size_t write_to(ht::internal::file::TempFile &file) const {
         std::size_t bytes_written = file.write({std::byte(0x82)}) + parent.id.write_to(file);
         if (key.has_value()) {
@@ -456,6 +461,11 @@ public:
         tid(last_tid) {
     }
 
+    Event(const Event &) = delete;
+    Event(Event &&) = default;
+    Event &operator=(const Event &) = delete;
+    Event &operator=(Event &&) = default;
+
     std::size_t write_to(ht::internal::file::TempFile &file) const {
         using namespace std::string_view_literals;
 
@@ -499,6 +509,11 @@ public:
     explicit Message(Event &&value) noexcept :
         value(std::in_place_index<2>, std::move(value)) {
     }
+
+    Message(const Message &) = delete;
+    Message(Message &&) = default;
+    Message &operator=(const Message &) = delete;
+    Message &operator=(Message &&) = default;
 
     std::size_t write_to(ht::internal::file::TempFile &file) const {
         return std::visit([&file](const auto &value) { return value.write_to(file); }, value);
