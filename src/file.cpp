@@ -1,13 +1,14 @@
 #include "file"
 #define _GNU_SOURCE
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cerrno>
 #include <fcntl.h>
 #include <stdexcept>
 #include <stdlib.h>
-#include <string_view>
 #include <system_error>
+#include <time.h>
 #include <unistd.h>
 
 namespace ht {
@@ -20,10 +21,27 @@ TempFile::TempFile(std::string_view prefix, std::string_view suffix, std::size_t
     if (prefix.find('\0') != std::string_view::npos || suffix.find('\0') != std::string_view::npos) {
         throw std::invalid_argument("filename contains NUL byte");
     }
-    filename.reserve(prefix.size() + 6 + suffix.size());
+
+    time_t timer = ::time(nullptr);
+    if (timer == time_t(-1)) {
+        throw std::system_error(errno, std::generic_category(), "time");
+    }
+    struct tm tm;
+    struct tm *ptm = ::gmtime_r(&timer, &tm);
+    if (ptm == nullptr) {
+        throw std::system_error(errno, std::generic_category(), "gmtime_r");
+    }
+    std::array<char, 21> date_buffer;
+    std::size_t date_len = ::strftime(date_buffer.data(), date_buffer.size(), "%Y-%m-%dT%H-%M-%SZ", ptm);
+
+    filename.reserve(prefix.size() + suffix.size() + 28);
     filename.append(prefix);
+    filename.push_back('_');
+    filename.append(date_buffer.data(), date_len);
+    filename.push_back('_');
     filename.append(6, 'X');
     filename.append(suffix);
+
     fd = ::mkostemps(filename.data(), suffix.size(), O_CLOEXEC);
     if (fd == -1) {
         throw std::system_error(errno, std::generic_category(), "mkostemps");

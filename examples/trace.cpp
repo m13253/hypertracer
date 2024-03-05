@@ -21,6 +21,35 @@ struct ThreadParams {
     std::uint64_t trace_per_batch;
 };
 
+static void thread_start(ThreadParams &params) noexcept;
+
+int main(void) {
+    ht::Tracer tracer(true, "trace"sv);
+    if (tracer.is_enabled()) {
+        std::clog << "Writing to: "sv << tracer.get_filename() << ", will take 10 seconds"sv << std::endl;
+    } else {
+        std::clog << "Will take 10 seconds"sv << std::endl;
+    }
+
+    auto start = std::chrono::high_resolution_clock::now();
+    auto end = start + std::chrono::seconds(10);
+
+    std::array<ThreadParams, 16> params;
+    for (std::size_t i = 0; i < 16; i++) {
+        params.at(i).tracer = &tracer;
+        params.at(i).start = start;
+        params.at(i).end = end;
+        params.at(i).interval = std::chrono::milliseconds(static_cast<std::int64_t>(i) + 1);
+        params.at(i).trace_per_batch = 5;
+    }
+    for (std::size_t i = 0; i < 16; i++) {
+        params.at(i).thread = std::thread(thread_start, std::ref(params.at(i)));
+    }
+    for (std::size_t i = 0; i < 16; i++) {
+        params.at(i).thread.join();
+    }
+}
+
 static void thread_start(ThreadParams &params) noexcept {
     ht::Event ev(*params.tracer, "thread_start"sv, {"func"sv}, true);
 
@@ -48,32 +77,5 @@ static void thread_start(ThreadParams &params) noexcept {
                 payload.push("trace_id"sv, trace_id);
             });
         }
-    }
-}
-
-int main(void) {
-    ht::Tracer tracer(true, "trace"sv);
-    if (tracer.is_enabled()) {
-        std::clog << "Writing to: "sv << tracer.get_filename() << ", will take 10 seconds"sv << std::endl;
-    } else {
-        std::clog << "Will take 10 seconds"sv << std::endl;
-    }
-
-    auto start = std::chrono::high_resolution_clock::now();
-    auto end = start + std::chrono::seconds(10);
-
-    std::array<ThreadParams, 16> params;
-    for (std::size_t i = 0; i < 16; i++) {
-        params.at(i).tracer = &tracer;
-        params.at(i).start = start;
-        params.at(i).end = end;
-        params.at(i).interval = std::chrono::milliseconds(static_cast<std::int64_t>(i) + 1);
-        params.at(i).trace_per_batch = 5;
-    }
-    for (std::size_t i = 0; i < 16; i++) {
-        params.at(i).thread = std::thread(thread_start, std::ref(params.at(i)));
-    }
-    for (std::size_t i = 0; i < 16; i++) {
-        params.at(i).thread.join();
     }
 }

@@ -12,13 +12,13 @@ namespace internal {
 namespace msg {
 
 void get_pid_tid() noexcept {
-    last_pid = std::uint64_t(getpid());
+    last_pid = std::uint64_t(::getpid());
 #ifdef __linux__
-    last_tid = std::uint64_t(gettid());
+    last_tid = std::uint64_t(::gettid());
 #elif defined(__APPLE__)
-    pthread_threadid_np(nullptr, &last_tid);
+    ::pthread_threadid_np(nullptr, &last_tid);
 #else
-    last_tid = std::uint64_t(pthread_self());
+    last_tid = std::uint64_t(::pthread_self());
 #endif
 }
 
