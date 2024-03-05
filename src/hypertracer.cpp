@@ -2,8 +2,10 @@
 #include "file"
 #include "msg"
 #include "panic"
+#define _GNU_SOURCE
 #include <cerrno>
 #include <exception>
+#include <pthread.h>
 #include <string_view>
 #include <system_error>
 #include <time.h>
@@ -12,6 +14,13 @@ namespace ht {
 
 void Tracer::Internal::thread_main(std::string_view prefix, std::string_view suffix, std::size_t buffer_size, std::promise<FileInfo> info, std::promise<void> error) noexcept {
     using namespace std::string_view_literals;
+
+#ifdef __linux__
+    pthread_setname_np(pthread_self(), "hypertracer");
+#elif defined(__APPLE__)
+    pthread_setname_np("hypertracer");
+#endif
+
     std::optional<ht::internal::file::TempFile> file;
     try {
         file.emplace(prefix, suffix, buffer_size);
@@ -33,7 +42,7 @@ void Tracer::Internal::thread_main(std::string_view prefix, std::string_view suf
             if (!has_stalled) {
                 if (chan_reader.get_stall_count() != 0) {
                     has_stalled = true;
-                    ht::internal::warning("warning: ht::Tracer::Internal::thread_main: tracing cannot keep up. try increasing tracing buffer size\n");
+                    ht::internal::warning("warning: ht::Tracer::Internal::thread_main: tracing cannot keep up. try increasing tracing buffer size\n"sv);
                 }
             }
             auto msg = chan_reader.read();

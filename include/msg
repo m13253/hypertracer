@@ -113,18 +113,18 @@ public:
             return file.write({std::byte(tag | std::uint8_t(value))});
         } else if (value <= 0x100) {
             return file.write({
-                std::byte(tag | 0x08),
+                std::byte(tag | 0x18),
                 std::byte(value),
             });
         } else if (value <= 0x10000) {
             return file.write({
-                std::byte(tag | 0x09),
+                std::byte(tag | 0x19),
                 std::byte(value >> 8),
                 std::byte(value),
             });
         } else if (value <= 0x100000000) {
             return file.write({
-                std::byte(tag | 0x0a),
+                std::byte(tag | 0x1a),
                 std::byte(value >> 24),
                 std::byte(value >> 16),
                 std::byte(value >> 8),
@@ -132,7 +132,7 @@ public:
             });
         } else {
             return file.write({
-                std::byte(tag | 0x0b),
+                std::byte(tag | 0x1b),
                 std::byte(value >> 56),
                 std::byte(value >> 48),
                 std::byte(value >> 40),
@@ -229,42 +229,6 @@ public:
     }
 
     CowString value;
-};
-
-class Categories final {
-public:
-    Categories(CowVec<CowString> &&value) noexcept :
-        value(std::move(value)) {
-    }
-
-    Categories as_ref() const noexcept {
-        return Categories(value.as_ref());
-    }
-
-    std::span<const CowString> get() const noexcept {
-        return value.get();
-    }
-    std::span<const CowString> operator*() const noexcept {
-        return *value;
-    }
-
-    std::size_t write_to(ht::internal::file::TempFile &file) const {
-        std::span<const CowString> vec = get();
-        std::uint64_t len = 0;
-        for (std::size_t i = 0; i < vec.size(); i++) {
-            len += vec[i].get().size() + (i != 0);
-        }
-        std::size_t bytes_written = UInt(len, 0x60).write_to(file);
-        for (std::size_t i = 0; i < vec.size(); i++) {
-            if (i != 0) {
-                bytes_written += file.write(std::array<std::byte, 1>{std::byte(',')});
-            }
-            bytes_written += file.write(vec[i].get());
-        }
-        return bytes_written;
-    }
-
-    CowVec<CowString> value;
 };
 
 class Duration final {
@@ -366,7 +330,7 @@ public:
 class Value final {
 public:
     typedef std::optional<String> KeyType;
-    typedef std::variant<std::monostate, Open, Bool, UInt, Int, Float32, Float64, String, Categories, Timestamp> ValueType;
+    typedef std::variant<std::monostate, Open, Bool, UInt, Int, Float32, Float64, String, Timestamp> ValueType;
 
     explicit Value(const Open &parent, std::nullopt_t, ValueType &&value) noexcept :
         parent(parent), value(std::move(value)) {
@@ -410,9 +374,6 @@ public:
         case 8:
             bytes_written += std::get<8>(value).write_to(file);
             break;
-        case 9:
-            bytes_written += std::get<9>(value).write_to(file);
-            break;
         }
         return bytes_written;
     }
@@ -438,7 +399,7 @@ public:
 
 class Event final {
 public:
-    explicit Event(String &&name, Categories &&cat, String &&ph, const Timestamp &ts) noexcept :
+    explicit Event(String &&name, String &&cat, String &&ph, const Timestamp &ts) noexcept :
         name(std::move(name)),
         cat(std::move(cat)),
         ph(std::move(ph)),
@@ -461,7 +422,7 @@ public:
 
     Open id;
     String name;
-    Categories cat;
+    String cat;
     String ph;
     Timestamp ts;
     UInt pid;
