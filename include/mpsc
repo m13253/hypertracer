@@ -123,6 +123,9 @@ public:
             case SlotStatus::Value: {
                 // Move the data
                 T *msg = std::launder(reinterpret_cast<T *>(slot.msg.data()));
+                // I have no idea why ThreadSanitizer yells at me.
+                // Am I doing wrong? Or is it a limitation of TSan?
+                // https://stackoverflow.com/q/37552866/2557927
                 TSAN_ANNOTATE_IGNORE_WRITES_BEGIN();
                 result.emplace(std::move(*msg));
                 msg->~T();
@@ -274,6 +277,9 @@ public:
     void write(T &&msg) noexcept {
         Reader<T> &r = *this->r;
         Slot &slot = before_write(r);
+        // I have no idea why ThreadSanitizer yells at me.
+        // Am I doing wrong? Or is it a limitation of TSan?
+        // https://stackoverflow.com/q/37552866/2557927
         TSAN_ANNOTATE_IGNORE_WRITES_BEGIN();
         new (slot.msg.data()) T(std::move(msg));
         TSAN_ANNOTATE_IGNORE_WRITES_END();

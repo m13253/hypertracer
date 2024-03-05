@@ -85,7 +85,7 @@ private:
 public:
     Tracer(bool enable, std::string_view prefix, std::string_view suffix = std::string_view(".trace", 6)) :
         internal(
-            ht::internal::env::getenv("HYPERTRACER_ENABLE", enable) ?
+            ht::internal::env::getenv("HYPERTRACER_ENABLED", enable) ?
                 std::optional<Internal>(std::in_place, *this, prefix, suffix) :
                 std::nullopt
         ) {
