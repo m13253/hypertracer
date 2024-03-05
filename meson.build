@@ -3,6 +3,7 @@ project('hypertracer', ['cpp'],
   default_options : [
     'b_lto=true',
     'buildtype=debugoptimized',
+    'c_std=c17',
     'cpp_std=c++20',
     'optimization=3',
     'warning_level=3',
