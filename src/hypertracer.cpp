@@ -2,7 +2,9 @@
 #include "file"
 #include "msg"
 #include "panic"
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <cerrno>
 #include <exception>
 #include <pthread.h>

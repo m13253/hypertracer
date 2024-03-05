@@ -1,6 +1,8 @@
 #include "msg"
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <cstdint>
 #include <unistd.h>
 #ifndef __linux__

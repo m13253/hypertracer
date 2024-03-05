@@ -1,13 +1,10 @@
 #ifndef INCLUDE_HYPERTRACER_COW
 #define INCLUDE_HYPERTRACER_COW
 
-#include <initializer_list>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <variant>
-#include <vector>
 
 namespace ht {
 
