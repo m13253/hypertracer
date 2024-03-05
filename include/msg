@@ -284,7 +284,7 @@ public:
                    std::byte(0x01),
                }) +
                Int(value.tv_sec).write_to(file) +
-               file.write({std::byte(0x29)}) +
+               file.write({std::byte(0x28)}) +
                Int(value.tv_nsec).write_to(file);
     }
 
