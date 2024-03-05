@@ -120,9 +120,9 @@ public:
 
 private:
     void after_read(Slot &slot) noexcept {
-        slot.status.store(std::underlying_type_t<SlotStatus>(SlotStatus::Empty), std::memory_order::relaxed);
         // Release an index to front
         front = front + 1 != cap ? front + 1 : 0;
+        slot.status.store(std::underlying_type_t<SlotStatus>(SlotStatus::Empty), std::memory_order::release);
 
         {
             std::unique_lock lock_write(mtx_write);
