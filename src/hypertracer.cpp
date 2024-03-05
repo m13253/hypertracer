@@ -42,7 +42,7 @@ void Tracer::Internal::thread_main(std::string_view prefix, std::string_view suf
             if (!has_stalled) {
                 if (chan_reader.get_stall_count() != 0) {
                     has_stalled = true;
-                    ht::internal::warning("warning: ht::Tracer::Internal::thread_main: tracing cannot keep up. try increasing tracing buffer size\n"sv);
+                    ht::internal::warning("warning: ht::Tracer::Internal::thread_main: tracing cannot keep up. try increasing tracing buffer size through HYPERTRACER_THREAD_BUFFER or file buffer size through HYPERTRACER_FILE_BUFFER\n"sv);
                 }
             }
             auto msg = chan_reader.read();
