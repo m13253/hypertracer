@@ -20,8 +20,23 @@ public:
         value(std::in_place_index<0>, value) {
     }
 
+    CowString(const CowString &) = delete;
+    CowString(CowString &&) = default;
+
+    CowString &operator=(const CowString &) = delete;
+    CowString &operator=(CowString &&) = default;
+
     CowString as_ref() const noexcept {
         return CowString(get());
+    }
+    CowString clone() const noexcept {
+        switch (value.index()) {
+        case 0:
+            return CowString(std::get<0>(value));
+        case 1:
+            return CowString(std::string(std::get<1>(value)));
+        }
+        __builtin_unreachable();
     }
 
     std::string_view get() const noexcept {

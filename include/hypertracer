@@ -117,7 +117,7 @@ public:
             return;
         }
         if (duration) {
-            end_info.emplace(CowString(name), CowString(cat));
+            end_info.emplace(name.clone(), cat.clone());
         }
         ht::internal::msg::Event begin_event(
             std::move(name),
@@ -234,7 +234,7 @@ public:
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Float64(value))));
         }
     }
-    void push(CowString value) noexcept {
+    void push(CowString &&value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, std::move(value))));
         }
@@ -267,67 +267,67 @@ private:
     }
 
 public:
-    void push(CowString key, std::nullptr_t) noexcept {
+    void push(CowString &&key, std::nullptr_t) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), std::monostate{})));
         }
     }
-    void push(CowString key, bool value) noexcept {
+    void push(CowString &&key, bool value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Bool(value))));
         }
     }
-    void push(CowString key, std::uint64_t value) noexcept {
+    void push(CowString &&key, std::uint64_t value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
         }
     }
-    void push(CowString key, std::uint32_t value) noexcept {
+    void push(CowString &&key, std::uint32_t value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
         }
     }
-    void push(CowString key, std::uint16_t value) noexcept {
+    void push(CowString &&key, std::uint16_t value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
         }
     }
-    void push(CowString key, std::uint8_t value) noexcept {
+    void push(CowString &&key, std::uint8_t value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
         }
     }
-    void push(CowString key, std::int64_t value) noexcept {
+    void push(CowString &&key, std::int64_t value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
         }
     }
-    void push(CowString key, std::int32_t value) noexcept {
+    void push(CowString &&key, std::int32_t value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
         }
     }
-    void push(CowString key, std::int16_t value) noexcept {
+    void push(CowString &&key, std::int16_t value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
         }
     }
-    void push(CowString key, std::int8_t value) noexcept {
+    void push(CowString &&key, std::int8_t value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
         }
     }
-    void push(CowString key, float value) noexcept {
+    void push(CowString &&key, float value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Float32(value))));
         }
     }
-    void push(CowString key, double value) noexcept {
+    void push(CowString &&key, double value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Float64(value))));
         }
     }
-    void push(CowString key, CowString value) noexcept {
+    void push(CowString &&key, CowString &&value) noexcept {
         if (tracer.internal.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), std::move(value))));
         }
