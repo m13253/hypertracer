@@ -1,19 +1,19 @@
 #ifndef INCLUDE_HYPERTRACER_MPSC
 #define INCLUDE_HYPERTRACER_MPSC
 
+#include "panic"
 #include <array>
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <new>
 #include <optional>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -39,44 +39,25 @@ private:
 
     class Slot final {
     public:
-        std::atomic_uint_fast8_t status = std::underlying_type_t<SlotStatus>(SlotStatus::Empty);
+        alignas(Align) std::atomic_uint_fast8_t status = std::underlying_type_t<SlotStatus>(SlotStatus::Empty);
         alignas(T) std::array<std::byte, sizeof(T)> msg = {};
     };
 
-private:
-    Reader(std::size_t cap) noexcept :
+public:
+    explicit Reader(std::size_t cap) noexcept :
         buffer(std::make_unique<Slot[]>(cap)),
         cap(cap) {
         assert(cap != 0);
     }
 
-public:
     ~Reader() noexcept {
+        using namespace std::string_view_literals;
         std::size_t writer_count = this->writer_count.load(std::memory_order::acquire);
-
-        while (writer_count != 0) {
-            auto [slot, status] = before_read();
-
-            switch (status) {
-            case SlotStatus::Empty:
-                __builtin_unreachable();
-                break;
-            case SlotStatus::Value: {
-                // Destroy the data
-                T &msg = *std::launder(reinterpret_cast<T *>(slot.msg.data()));
-                msg.~T();
-                break;
-            }
-            case SlotStatus::Closing:
-                writer_count = this->writer_count.fetch_sub(1, std::memory_order::acquire) - 1;
-                break;
-            }
-
-            after_read(slot);
+        if (writer_count != 0) {
+            ht::internal::panic("panic: ht::internal::mpsc::Reader::~Reader: channel not closed properly\n"sv);
         }
     }
 
-public:
     typename std::atomic_unsigned_lock_free::value_type get_stall_count() const noexcept {
         return stall_count.load(std::memory_order::relaxed);
     }
@@ -87,16 +68,15 @@ public:
 
 private:
     std::pair<Slot &, SlotStatus> before_read() noexcept {
+        using namespace std::string_view_literals;
         Slot &slot = buffer[front];
         SlotStatus status;
-
         {
             std::unique_lock lock_read(mtx_read);
             // Tell the writing thread we may need a wake-up
             bool is_reading_false = false;
             if (!is_reading.compare_exchange_strong(is_reading_false, true, std::memory_order::relaxed, std::memory_order::relaxed)) {
-                std::fputs("panic: ht::internal::mpsc::Reader::before_read: more than one threads are reading\n", stderr);
-                std::terminate();
+                ht::internal::panic("panic: ht::internal::mpsc::Reader::before_read: more than one threads are reading\n");
             }
             status = SlotStatus(slot.status.load(std::memory_order::acquire));
             // Test if the front element is ready.
@@ -106,7 +86,6 @@ private:
             }
             is_reading.store(false, std::memory_order::relaxed);
         }
-
         return {std::ref(slot), status};
     }
 
@@ -177,6 +156,10 @@ class Writer final {
 private:
     typedef Reader<T>::SlotStatus SlotStatus;
     typedef Reader<T>::Slot Slot;
+
+    explicit Writer() noexcept :
+        r(nullptr) {
+    }
 
     explicit Writer(Reader<T> &reader) noexcept :
         r(&reader) {
@@ -272,19 +255,23 @@ public:
         after_write(r, slot, SlotStatus::Value);
     }
 
-private:
     void close() noexcept {
+        if (this->r == nullptr) {
+            return;
+        }
         Reader<T> &r = *this->r;
+        this->r = nullptr;
         Slot &slot = before_write(r);
         after_write(r, slot, SlotStatus::Closing);
     }
 
+private:
     static void after_write(Reader<T> &r, Slot &slot, SlotStatus status) noexcept {
+        using namespace std::string_view_literals;
         // Set the status
         auto status_empty = std::underlying_type_t<SlotStatus>(SlotStatus::Empty);
         if (!slot.status.compare_exchange_strong(status_empty, std::underlying_type_t<SlotStatus>(status), std::memory_order::release, std::memory_order::relaxed)) {
-            std::fputs("panic: ht::mpsc::Writer::after_write: memory corruption\n", stderr);
-            std::terminate();
+            ht::internal::panic("panic: ht::mpsc::Writer::after_write: memory corruption\n"sv);
         }
         // Wake up the reading thread
         if (r.is_reading.load(std::memory_order::relaxed)) {

@@ -1,0 +1,68 @@
+#ifndef INCLUDE_HYPERTRACER_COW
+#define INCLUDE_HYPERTRACER_COW
+
+#include <initializer_list>
+#include <span>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <variant>
+#include <vector>
+
+namespace ht {
+
+class CowString final {
+public:
+    CowString(std::string &&value) noexcept :
+        value(std::in_place_index<1>, std::forward<std::string>(value)) {
+    }
+    CowString(const std::string_view &value) noexcept :
+        value(std::in_place_index<0>, value) {
+    }
+
+    CowString as_ref() const noexcept {
+        return CowString(get());
+    }
+
+    std::string_view get() const noexcept {
+        return std::visit([](const auto &value) { return std::string_view(value); }, value);
+    }
+    std::string_view operator*() const noexcept {
+        return get();
+    }
+
+private:
+    std::variant<std::string_view, std::string> value;
+};
+
+template <typename T>
+class CowVec final {
+public:
+    CowVec(std::vector<T> &&value) noexcept :
+        value(std::in_place_index<1>, std::forward<std::vector<T>>(value)) {
+    }
+    CowVec(const std::span<const T> &value) noexcept :
+        value(std::in_place_index<0>, value) {
+    }
+    CowVec(std::initializer_list<const T> value) noexcept :
+        value(std::in_place_index<0>, std::span(value)) {
+    }
+
+    CowVec as_ref() const noexcept {
+        return CowVec(get());
+    }
+
+    std::span<const T> get() const noexcept {
+        return std::visit([](const auto &value) { return std::span<const T>(value); }, value);
+    }
+    std::span<const T> operator*() const noexcept {
+        return get();
+    }
+
+private:
+    std::variant<std::span<const T>, std::vector<T>> value;
+};
+
+} // namespace ht
+
+#endif

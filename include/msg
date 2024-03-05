@@ -1,0 +1,499 @@
+#ifndef INCLUDE_HYPERTRACER_MSG
+#define INCLUDE_HYPERTRACER_MSG
+
+#include "cow"
+#include "file"
+#include <array>
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <ctime>
+#include <optional>
+#include <span>
+#include <string_view>
+#include <utility>
+#include <variant>
+
+// No idea why IWYU asks me to do this
+struct timespec;
+
+namespace ht {
+namespace internal {
+namespace msg {
+
+void get_pid_tid() noexcept;
+extern thread_local std::uint64_t last_pid;
+extern thread_local std::uint64_t last_tid;
+extern thread_local bool pid_tid_avail;
+
+class ID final {
+public:
+    explicit ID() noexcept :
+        tid(get_tid()), mid(++last_mid) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({
+            std::byte(0xd8),
+            std::byte(0x27),
+            std::byte(0x50),
+            std::byte(tid >> 56),
+            std::byte(tid >> 48),
+            std::byte(tid >> 40),
+            std::byte(tid >> 32),
+            std::byte(tid >> 24),
+            std::byte(tid >> 16),
+            std::byte(tid >> 8),
+            std::byte(tid),
+            std::byte(mid >> 56),
+            std::byte(mid >> 48),
+            std::byte(mid >> 40),
+            std::byte(mid >> 32),
+            std::byte(mid >> 24),
+            std::byte(mid >> 16),
+            std::byte(mid >> 8),
+            std::byte(mid),
+        });
+    }
+
+    // Thread ID
+    std::uint64_t tid;
+    // Message ID
+    std::uint64_t mid;
+
+private:
+    static std::uint64_t get_tid() noexcept {
+        if (!pid_tid_avail) {
+            get_pid_tid();
+            pid_tid_avail = true;
+        }
+        return last_tid;
+    }
+
+    static thread_local std::uint64_t last_mid;
+};
+
+class Open final {
+public:
+    explicit Open() noexcept = default;
+
+    explicit Open(const ID &id) noexcept :
+        id(id) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({std::byte(0x81)}) + id.write_to(file);
+    }
+
+    ID id;
+};
+
+class Bool final {
+public:
+    explicit Bool(bool value) noexcept :
+        value(value) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({value ? std::byte(0xf5) : std::byte(0xf4)});
+    }
+
+    std::uint8_t value;
+};
+
+class UInt final {
+public:
+    explicit UInt(std::uint64_t value, std::uint8_t tag = 0) noexcept :
+        value(value),
+        tag(tag) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        if (value <= 24) {
+            return file.write({std::byte(tag | std::uint8_t(value))});
+        } else if (value <= 0x100) {
+            return file.write({
+                std::byte(tag | 0x08),
+                std::byte(value),
+            });
+        } else if (value <= 0x10000) {
+            return file.write({
+                std::byte(tag | 0x09),
+                std::byte(value >> 8),
+                std::byte(value),
+            });
+        } else if (value <= 0x100000000) {
+            return file.write({
+                std::byte(tag | 0x0a),
+                std::byte(value >> 24),
+                std::byte(value >> 16),
+                std::byte(value >> 8),
+                std::byte(value),
+            });
+        } else {
+            return file.write({
+                std::byte(tag | 0x0b),
+                std::byte(value >> 56),
+                std::byte(value >> 48),
+                std::byte(value >> 40),
+                std::byte(value >> 32),
+                std::byte(value >> 24),
+                std::byte(value >> 16),
+                std::byte(value >> 8),
+                std::byte(value),
+            });
+        }
+    }
+
+    std::uint64_t value;
+    std::uint8_t tag;
+};
+
+class Int final {
+public:
+    explicit Int(std::int64_t value) noexcept :
+        value(value) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return (value >= 0 ? UInt(value) : UInt(~value, 0x20)).write_to(file);
+    }
+
+    std::int64_t value;
+};
+
+class Float32 final {
+public:
+    explicit Float32(float value) noexcept :
+        value(value) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        std::uint32_t value = std::bit_cast<std::uint32_t>(this->value);
+        return file.write({
+            std::byte(0xfa),
+            std::byte(value >> 24),
+            std::byte(value >> 16),
+            std::byte(value >> 8),
+            std::byte(value),
+        });
+    }
+
+    float value;
+};
+
+class Float64 final {
+public:
+    explicit Float64(double value) noexcept :
+        value(value) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        std::uint64_t value = std::bit_cast<std::uint64_t>(this->value);
+        return file.write({
+            std::byte(0xfb),
+            std::byte(value >> 56),
+            std::byte(value >> 48),
+            std::byte(value >> 40),
+            std::byte(value >> 32),
+            std::byte(value >> 24),
+            std::byte(value >> 16),
+            std::byte(value >> 8),
+            std::byte(value),
+        });
+    }
+
+    double value;
+};
+
+class String final {
+public:
+    String(CowString &&value) noexcept :
+        value(std::move(value)) {
+    }
+
+    String as_ref() const noexcept {
+        return String(value.as_ref());
+    }
+
+    std::string_view get() const noexcept {
+        return value.get();
+    }
+    std::string_view operator*() const noexcept {
+        return *value;
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        std::string_view str = get();
+        return UInt(str.size(), 0x60).write_to(file) + file.write(str);
+    }
+
+    CowString value;
+};
+
+class Categories final {
+public:
+    Categories(CowVec<CowString> &&value) noexcept :
+        value(std::move(value)) {
+    }
+
+    Categories as_ref() const noexcept {
+        return Categories(value.as_ref());
+    }
+
+    std::span<const CowString> get() const noexcept {
+        return value.get();
+    }
+    std::span<const CowString> operator*() const noexcept {
+        return *value;
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        std::span<const CowString> vec = get();
+        std::uint64_t len = 0;
+        for (std::size_t i = 0; i < vec.size(); i++) {
+            len += vec[i].get().size() + (i != 0);
+        }
+        std::size_t bytes_written = UInt(len, 0x60).write_to(file);
+        for (std::size_t i = 0; i < vec.size(); i++) {
+            if (i != 0) {
+                bytes_written += file.write(std::array<std::byte, 1>{std::byte(',')});
+            }
+            bytes_written += file.write(vec[i].get());
+        }
+        return bytes_written;
+    }
+
+    CowVec<CowString> value;
+};
+
+class Duration final {
+public:
+    explicit Duration() noexcept :
+        value({}) {
+    }
+    explicit Duration(const std::timespec &value) noexcept :
+        value(value) {
+    }
+
+    Duration &operator+=(const Duration &other) noexcept {
+        value.tv_sec += other.value.tv_sec;
+        value.tv_nsec += other.value.tv_nsec;
+        if (value.tv_nsec >= 1'000'000'000) {
+            value.tv_sec++;
+            value.tv_nsec -= 1'000'000'000;
+        }
+        return *this;
+    }
+
+    Duration operator+(const Duration &other) const noexcept {
+        auto tv_sec = value.tv_sec + other.value.tv_sec;
+        auto tv_nsec = value.tv_nsec + other.value.tv_nsec;
+        if (tv_nsec >= 1'000'000'000) {
+            tv_sec++;
+            tv_nsec -= 1'000'000'000;
+        }
+        return Duration(std::timespec{
+            .tv_sec = tv_sec,
+            .tv_nsec = tv_nsec,
+        });
+    }
+
+    std::timespec value;
+};
+
+class Timestamp final {
+public:
+    explicit Timestamp() noexcept :
+        value({}) {
+    }
+    explicit Timestamp(const std::timespec &value) noexcept :
+        value(value) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({
+                   std::byte(0xd9),
+                   std::byte(0x03),
+                   std::byte(0xe9),
+                   std::byte(0xa2),
+                   std::byte(0x01),
+               }) +
+               Int(value.tv_sec).write_to(file) +
+               file.write({std::byte(0x29)}) +
+               Int(value.tv_nsec).write_to(file);
+    }
+
+    Timestamp &operator+=(const Duration &offset) noexcept {
+        value.tv_sec += offset.value.tv_sec;
+        value.tv_nsec += offset.value.tv_nsec;
+        if (value.tv_nsec >= 1'000'000'000) {
+            value.tv_sec++;
+            value.tv_nsec -= 1'000'000'000;
+        }
+        return *this;
+    }
+
+    Timestamp operator+(const Duration &offset) const noexcept {
+        auto tv_sec = value.tv_sec + offset.value.tv_sec;
+        auto tv_nsec = value.tv_nsec + offset.value.tv_nsec;
+        if (tv_nsec >= 1'000'000'000) {
+            tv_sec++;
+            tv_nsec -= 1'000'000'000;
+        }
+        return Timestamp(std::timespec{
+            .tv_sec = tv_sec,
+            .tv_nsec = tv_nsec,
+        });
+    }
+
+    Duration operator-(const Timestamp &since) const noexcept {
+        auto tv_sec = value.tv_sec - since.value.tv_sec;
+        auto tv_nsec = value.tv_nsec - since.value.tv_nsec;
+        if (value.tv_nsec < since.value.tv_nsec) {
+            tv_sec--;
+            tv_nsec += 1'000'000'000;
+        }
+        return Duration(std::timespec{
+            .tv_sec = tv_sec,
+            .tv_nsec = tv_nsec,
+        });
+    }
+
+    std::timespec value;
+};
+
+class Value final {
+public:
+    typedef std::optional<String> KeyType;
+    typedef std::variant<std::monostate, Open, Bool, UInt, Int, Float32, Float64, String, Categories, Timestamp> ValueType;
+
+    explicit Value(const Open &parent, std::nullopt_t, ValueType &&value) noexcept :
+        parent(parent), value(std::move(value)) {
+    }
+    explicit Value(const Open &parent, String &&key, ValueType &&value) noexcept :
+        parent(parent), key(std::move(key)), value(std::move(value)) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        std::size_t bytes_written = file.write({std::byte(0x82)}) + parent.id.write_to(file);
+        if (key.has_value()) {
+            bytes_written += file.write({std::byte(0xa1)}) + key->write_to(file);
+        } else {
+            bytes_written += file.write({std::byte(0x81)});
+        }
+        switch (value.index()) {
+        case 0:
+            bytes_written += file.write({std::byte(0xf6)});
+            break;
+        case 1:
+            bytes_written += std::get<1>(value).write_to(file);
+            break;
+        case 2:
+            bytes_written += std::get<2>(value).write_to(file);
+            break;
+        case 3:
+            bytes_written += std::get<3>(value).write_to(file);
+            break;
+        case 4:
+            bytes_written += std::get<4>(value).write_to(file);
+            break;
+        case 5:
+            bytes_written += std::get<5>(value).write_to(file);
+            break;
+        case 6:
+            bytes_written += std::get<6>(value).write_to(file);
+            break;
+        case 7:
+            bytes_written += std::get<7>(value).write_to(file);
+            break;
+        case 8:
+            bytes_written += std::get<8>(value).write_to(file);
+            break;
+        case 9:
+            bytes_written += std::get<9>(value).write_to(file);
+            break;
+        }
+        return bytes_written;
+    }
+
+public:
+    Open parent;
+    KeyType key;
+    ValueType value;
+};
+
+class EndValue final {
+public:
+    explicit EndValue(const Open &parent) noexcept :
+        parent(parent) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({std::byte(0x81)}) + parent.id.write_to(file);
+    }
+
+    Open parent;
+};
+
+class Event final {
+public:
+    explicit Event(String &&name, Categories &&cat, String &&ph, const Timestamp &ts) noexcept :
+        name(std::move(name)),
+        cat(std::move(cat)),
+        ph(std::move(ph)),
+        ts(ts),
+        pid(get_pid()),
+        tid(last_tid) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        using namespace std::string_view_literals;
+
+        return id.write_to(file) +
+               Value(id, String("name"sv), name.as_ref()).write_to(file) +
+               Value(id, String("cat"sv), cat.as_ref()).write_to(file) +
+               Value(id, String("ph"sv), ph.as_ref()).write_to(file) +
+               Value(id, String("ts"sv), Timestamp(ts)).write_to(file) +
+               Value(id, String("pid"sv), UInt(pid)).write_to(file) +
+               Value(id, String("tid"sv), UInt(tid)).write_to(file);
+    }
+
+    Open id;
+    String name;
+    Categories cat;
+    String ph;
+    Timestamp ts;
+    UInt pid;
+    UInt tid;
+
+private:
+    static std::uint64_t get_pid() noexcept {
+        if (!pid_tid_avail) {
+            get_pid_tid();
+            pid_tid_avail = true;
+        }
+        return last_pid;
+    }
+};
+
+class Message final {
+public:
+    typedef std::variant<Value, EndValue, Event> ValueType;
+
+    explicit Message(ValueType &&value) noexcept :
+        value(std::move(value)) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return std::visit([&file](const auto &value) { return value.write_to(file); }, value);
+    }
+
+    ValueType value;
+};
+
+} // namespace msg
+} // namespace internal
+} // namespace ht
+
+#endif

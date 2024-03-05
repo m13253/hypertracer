@@ -1,8 +1,10 @@
 #ifndef INCLUDE_HYPERTRACER_FILE
 #define INCLUDE_HYPERTRACER_FILE
 
+#include <cassert>
 #include <cstddef>
 #include <exception>
+#include <initializer_list>
 #include <memory>
 #include <span>
 #include <string>
@@ -14,7 +16,15 @@ namespace file {
 
 class TempFile final {
 public:
-    TempFile(std::string_view prefix, std::string_view suffix, std::size_t buffer_size = 4096);
+    explicit TempFile(std::string_view prefix, std::string_view suffix, std::size_t buffer_size = 4096);
+
+    explicit TempFile(int fd, std::size_t buffer_size = 4096) :
+        buf(std::make_unique_for_overwrite<std::byte[]>(buffer_size)),
+        buf_cap(buffer_size),
+        fd(fd) {
+        assert(fd != -1);
+        assert(buffer_size != 0);
+    }
 
     ~TempFile() noexcept(false);
 
@@ -38,6 +48,18 @@ public:
     }
 
     std::size_t write(std::span<const std::byte> data);
+
+    std::size_t write(std::initializer_list<const std::byte> data) {
+        return write(std::span(data.begin(), data.end()));
+    }
+
+    std::size_t write(std::string_view str) {
+        return write(std::span<const std::byte>(reinterpret_cast<const std::byte *>(str.data()), str.size()));
+    }
+
+    std::size_t write(const std::string &str) {
+        return write(std::span(reinterpret_cast<const std::byte *>(str.data()), str.size()));
+    }
 
 private:
     std::unique_ptr<std::byte[]> buf;

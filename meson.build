@@ -4,15 +4,26 @@ project('hypertracer', ['cpp'],
 )
 
 sources = [
+  'src/cow.cpp',
+  'src/env.cpp',
   'src/file.cpp',
+  'src/hypertracer.cpp',
   'src/mpsc.cpp',
+  'src/msg.cpp',
+  'src/panic.cpp',
 ]
 install_headers(
+  'include/cow',
+  'include/env',
+  'include/file',
   'include/hypertracer',
+  'include/mpsc',
+  'include/msg',
+  'include/panic',
   subdir : 'hypertracer'
 )
 
-lib = both_libraries('hypertracer', sources,
+lib = static_library('hypertracer', sources,
   install : true,
   include_directories : include_directories('include'),
   gnu_symbol_visibility : 'hidden',

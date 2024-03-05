@@ -1,0 +1,65 @@
+#ifndef INCLUDE_HYPERTRACER_ENV
+#define INCLUDE_HYPERTRACER_ENV
+
+#include "panic"
+#include <charconv>
+#include <cstdlib>
+#include <string>
+#include <string_view>
+#include <system_error>
+
+namespace ht {
+namespace internal {
+namespace env {
+
+static inline bool getenv(const char *name, bool default_value) noexcept {
+    using namespace std::string_view_literals;
+    const char *env = std::getenv(name);
+    if (env == nullptr || env[0] == '\0') {
+        return default_value;
+    }
+    if ("0"sv == env) {
+        return false;
+    }
+    if ("1"sv == env) {
+        return true;
+    }
+    ht::internal::warning("warning: ht::internal::env::getenv: environment variable "sv);
+    ht::internal::warning(name);
+    ht::internal::warning(default_value ? "does not contain either 0 or 1, using default value: 1\n"sv : "does not contain either 0 or 1, using default value: 0\n"sv);
+    return default_value;
+}
+
+static inline std::size_t getenv(const char *name, std::size_t default_value) noexcept {
+    using namespace std::string_view_literals;
+    const char *env = std::getenv(name);
+    if (env == nullptr || env[0] == '\0') {
+        return default_value;
+    }
+    std::string_view env_str = env;
+    std::size_t result;
+    if (std::from_chars(env_str.begin(), env_str.end(), result).ec == std::errc{}) {
+        return result;
+    }
+    ht::internal::warning("warning: ht::internal::env::getenv: environment variable "sv);
+    ht::internal::warning(name);
+    ht::internal::warning("does not contain a valid number, using default value: "sv);
+    ht::internal::warning(std::to_string(default_value));
+    ht::internal::warning("\n"sv);
+    return default_value;
+}
+
+static inline std::string_view getenv(const char *name, std::string_view default_value) noexcept {
+    using namespace std::string_view_literals;
+    const char *env = std::getenv(name);
+    if (env == nullptr || env[0] == '\0') {
+        return default_value;
+    }
+    return env;
+}
+
+} // namespace env
+} // namespace internal
+} // namespace ht
+
+#endif

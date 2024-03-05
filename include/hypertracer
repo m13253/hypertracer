@@ -1,31 +1,422 @@
 #ifndef INCLUDE_HYPERTRACER
 #define INCLUDE_HYPERTRACER
 
-#include "file"
+#include "cow" // IWYU pragma: export
+#include "env"
 #include "mpsc"
+#include "msg"
+#include <algorithm>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <future>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <utility>
+#include <variant>
 
 namespace ht {
 
+class PayloadMap;
+
 class Tracer final {
-public:
+    friend class Event;
+    friend class PayloadArray;
+    friend class PayloadMap;
+
 private:
+    class FileInfo final {
+    public:
+        std::string filename;
+        int fd = -1;
+    };
+
+    class Internal final {
+    public:
+        explicit Internal(Tracer &parent, std::string_view prefix, std::string_view suffix) :
+            chan_reader(ht::internal::env::getenv("HYPERTRACER_THREAD_BUFFER", std::max<std::size_t>(std::thread::hardware_concurrency() * 4, 64))),
+            chan_writer(chan_reader.new_writer()) {
+            std::promise<FileInfo> info_promise;
+            auto info_future = info_promise.get_future();
+            std::promise<void> error_promise;
+            error = error_promise.get_future();
+            thread = std::thread(
+                &Internal::thread_main,
+                this,
+                ht::internal::env::getenv("HYPERTRACER_OUTPUT", prefix),
+                suffix,
+                ht::internal::env::getenv("HYPERTRACER_FILE_BUFFER", std::size_t(4096)),
+                std::move(info_promise),
+                std::move(error_promise)
+            );
+            parent.info = info_future.get();
+            timediff = get_timediff();
+        }
+
+        ~Internal() noexcept(false) {
+            chan_writer.close();
+            thread.join();
+            error.get();
+        }
+
+    public:
+        ht::internal::msg::Timestamp now() const;
+
+    private:
+        void thread_main(std::string_view prefix, std::string_view suffix, std::size_t buffer_size, std::promise<FileInfo> info, std::promise<void> error) noexcept;
+
+        static ht::internal::msg::Duration get_timediff();
+
+    private:
+        ht::internal::mpsc::Reader<ht::internal::msg::Message> chan_reader;
+
+    public:
+        ht::internal::mpsc::Writer<ht::internal::msg::Message> chan_writer;
+
+    private:
+        std::future<void> error;
+        std::thread thread;
+        ht::internal::msg::Duration timediff;
+    };
+
+public:
+    Tracer(bool enable, std::string_view prefix, std::string_view suffix = std::string_view(".trace", 5)) :
+        internal(
+            ht::internal::env::getenv("HYPERTRACER_ENABLE", enable) ?
+                std::optional<Internal>(std::in_place, *this, prefix, suffix) :
+                std::nullopt
+        ) {
+    }
+
+    bool is_enabled() const noexcept {
+        return internal.has_value();
+    }
+
+    std::string_view get_filename() const noexcept {
+        return info.filename;
+    }
+
+    int get_fd() const noexcept {
+        return info.fd;
+    }
+
+private:
+    std::optional<Internal> internal;
+    FileInfo info;
 };
 
-class Trace final {
+class Event final {
 public:
+    explicit Event(Tracer &tracer, CowString name, CowVec<CowString> cat, bool duration = false) noexcept :
+        tracer(tracer) {
+        using namespace std::string_view_literals;
+        if (!tracer.internal.has_value()) {
+            return;
+        }
+        if (duration) {
+            end_info.emplace(CowString(name), CowVec<CowString>(cat));
+        }
+        ht::internal::msg::Event begin_event(
+            std::move(name),
+            std::move(cat),
+            CowString(duration ? "B"sv : "i"sv),
+            tracer.internal->now()
+        );
+        id.emplace(begin_event.id);
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(std::move(begin_event)));
+    }
+
+    ~Event() noexcept {
+        using namespace std::string_view_literals;
+        if (!tracer.internal.has_value()) {
+            return;
+        }
+        if (id.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*id)));
+        }
+        if (end_info.has_value()) {
+            ht::internal::msg::Event end_event(
+                std::move(end_info->first),
+                std::move(end_info->second),
+                CowString("E"sv),
+                tracer.internal->now()
+            );
+            auto end_id = end_event.id;
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(std::move(end_event)));
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(end_id)));
+        }
+    };
+
+    template <std::invocable<PayloadMap &> F>
+    inline auto push_args(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>())));
+
+private:
+    Tracer &tracer;
+    std::optional<std::pair<CowString, CowVec<CowString>>> end_info;
+    std::optional<ht::internal::msg::Open> id;
 };
 
 class PayloadArray final {
+    friend class PayloadMap;
+
+private:
+    PayloadArray(Tracer &tracer, std::optional<ht::internal::msg::Open> id) noexcept :
+        tracer(tracer), id(id) {
+    }
+
 public:
+    ~PayloadArray() noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*id)));
+        }
+    }
+
+    void push(std::nullptr_t) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, std::monostate{})));
+        }
+    }
+    void push(bool value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Bool(value))));
+        }
+    }
+    void push(std::uint64_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::UInt(value))));
+        }
+    }
+    void push(std::uint32_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::UInt(value))));
+        }
+    }
+    void push(std::uint16_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::UInt(value))));
+        }
+    }
+    void push(std::uint8_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::UInt(value))));
+        }
+    }
+    void push(std::int64_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Int(value))));
+        }
+    }
+    void push(std::int32_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Int(value))));
+        }
+    }
+    void push(std::int16_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Int(value))));
+        }
+    }
+    void push(std::int8_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Int(value))));
+        }
+    }
+    void push(float value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Float32(value))));
+        }
+    }
+    void push(double value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Float64(value))));
+        }
+    }
+    void push(CowString value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, std::move(value))));
+        }
+    }
+
+    template <std::invocable<PayloadArray &> F>
+    inline auto push_array(F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>())));
+
+    template <std::invocable<PayloadMap &> F>
+    inline auto push_map(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>())));
+
+public:
+    Tracer &tracer;
+    std::optional<ht::internal::msg::Open> id;
 };
 
-class PayloadObject final {
+class PayloadMap final {
+    friend class Event;
+    friend class PayloadArray;
+
+private:
+    PayloadMap(Tracer &tracer, std::optional<ht::internal::msg::Open> id) noexcept :
+        tracer(tracer), id(id) {
+    }
+
+    ~PayloadMap() noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*id)));
+        }
+    }
+
 public:
+    void push(CowString key, std::nullptr_t) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), std::monostate{})));
+        }
+    }
+    void push(CowString key, bool value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Bool(value))));
+        }
+    }
+    void push(CowString key, std::uint64_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
+        }
+    }
+    void push(CowString key, std::uint32_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
+        }
+    }
+    void push(CowString key, std::uint16_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
+        }
+    }
+    void push(CowString key, std::uint8_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
+        }
+    }
+    void push(CowString key, std::int64_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
+        }
+    }
+    void push(CowString key, std::int32_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
+        }
+    }
+    void push(CowString key, std::int16_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
+        }
+    }
+    void push(CowString key, std::int8_t value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
+        }
+    }
+    void push(CowString key, float value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Float32(value))));
+        }
+    }
+    void push(CowString key, double value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Float64(value))));
+        }
+    }
+    void push(CowString key, CowString value) noexcept {
+        if (tracer.internal.has_value()) {
+            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), std::move(value))));
+        }
+    }
+
+    template <std::invocable<PayloadArray &> F>
+    inline auto push_array(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>())));
+
+    template <std::invocable<PayloadMap &> F>
+    inline auto push_map(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>())));
+
+public:
+    Tracer &tracer;
+    std::optional<ht::internal::msg::Open> id;
+    std::optional<ht::internal::msg::Open> parent;
 };
 
-class PayloadValue final {
-public:
-};
+template <std::invocable<PayloadMap &> F>
+inline auto Event::push_args(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
+    using namespace std::string_view_literals;
+    if (!tracer.internal.has_value()) {
+        return;
+    }
+    ht::internal::msg::Open child_id;
+    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(
+        *id,
+        CowString("args"sv),
+        ht::internal::msg::Open(child_id)
+    )));
+    PayloadMap child(tracer, child_id);
+
+    struct ScopeGuard {
+        ~ScopeGuard() noexcept {
+            self.tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*self.id)));
+            self.id.reset();
+        }
+        Event &self;
+    } _scope_guard = {*this};
+
+    return f(std::ref(child));
+}
+
+template <std::invocable<PayloadArray &> F>
+inline auto PayloadArray::push_array(F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>()))) {
+    using namespace std::string_view_literals;
+    if (!tracer.internal.has_value()) {
+        return;
+    }
+    ht::internal::msg::Open child_id;
+    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Open(child_id))));
+    PayloadArray child(tracer, child_id);
+    return f(std::ref(child));
+}
+
+template <std::invocable<PayloadMap &> F>
+inline auto PayloadArray::push_map(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
+    using namespace std::string_view_literals;
+    if (!tracer.internal.has_value()) {
+        return;
+    }
+    ht::internal::msg::Open child_id;
+    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Open(child_id))));
+    PayloadMap child(tracer, child_id);
+    return f(std::ref(child));
+}
+
+template <std::invocable<PayloadArray &> F>
+inline auto PayloadMap::push_array(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>()))) {
+    using namespace std::string_view_literals;
+    if (!tracer.internal.has_value()) {
+        return;
+    }
+    ht::internal::msg::Open child_id;
+    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Open(child_id))));
+    PayloadArray child(tracer, child_id);
+    return f(std::ref(child));
+}
+
+template <std::invocable<PayloadMap &> F>
+inline auto PayloadMap::push_map(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
+    using namespace std::string_view_literals;
+    if (!tracer.internal.has_value()) {
+        return;
+    }
+    ht::internal::msg::Open child_id;
+    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Open(child_id))));
+    PayloadMap child(tracer, child_id);
+    return f(std::ref(child));
+}
 
 } // namespace ht
 
