@@ -74,9 +74,12 @@ static void thread_start(ThreadParams &params) noexcept {
         std::this_thread::sleep_for(std::chrono::nanoseconds(sleep_nsec));
 
         for (std::uint64_t trace_id = 0; trace_id < params.trace_per_batch; trace_id++) {
-            ht::Event(*params.tracer, "trace"sv, "func,trace"sv, false).push_args([batch_id, trace_id](ht::PayloadMap &payload) {
+            ht::Event(*params.tracer, "trace"sv, "func,trace"sv, false).set_args([batch_id, trace_id](ht::PayloadMap &payload) {
                 payload.push("batch_id"sv, batch_id);
-                payload.push("trace_id"sv, trace_id);
+                payload.push_array("trace_id"sv, [batch_id, trace_id](ht::PayloadArray &payload) {
+                    payload.push(batch_id);
+                    payload.push(trace_id);
+                });
             });
         }
     }

@@ -11,23 +11,10 @@ project('hypertracer', ['cpp'],
 )
 
 sources = [
-  'src/cow.cpp',
-  'src/env.cpp',
-  'src/file.cpp',
   'src/hypertracer.cpp',
-  'src/mpsc.cpp',
-  'src/msg.cpp',
-  'src/panic.cpp',
 ]
 install_headers(
-  'include/cow',
-  'include/env',
-  'include/file',
   'include/hypertracer',
-  'include/mpsc',
-  'include/msg',
-  'include/panic',
-  subdir : 'hypertracer'
 )
 
 lib = static_library('hypertracer', sources,
@@ -45,7 +32,6 @@ pkg_mod.generate(
   name : 'hypertracer',
   filebase : 'hypertracer',
   description : 'A tracing library for HPC kernel tuning & performance',
-  subdirs : 'hypertracer',
   libraries : lib,
   version : '0.1',
 )

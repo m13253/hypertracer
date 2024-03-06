@@ -1,24 +1,1099 @@
 #ifndef INCLUDE_HYPERTRACER
 #define INCLUDE_HYPERTRACER
 
-#include "cow" // IWYU pragma: export
-#include "env"
-#include "mpsc"
-#include "msg"
 #include <algorithm>
+#include <array>
+#include <atomic>
+#include <bit>
+#include <cassert>
+#include <charconv>
 #include <concepts>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
+#include <exception>
 #include <functional>
 #include <future>
+#include <initializer_list>
+#include <memory>
+#include <mutex>
+#include <new>
 #include <optional>
+#include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
+#if !defined(__SANITIZE_THREAD__) && defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define __SANITIZE_THREAD__ 1
+#endif
+#endif
+#ifdef __SANITIZE_THREAD__
+extern "C" {
+void AnnotateIgnoreWritesBegin(const char *f, int l);
+void AnnotateIgnoreWritesEnd(const char *f, int l);
+}
+#define TSAN_ANNOTATE_IGNORE_WRITES_BEGIN() \
+    AnnotateIgnoreWritesBegin(__FILE__, __LINE__)
+#define TSAN_ANNOTATE_IGNORE_WRITES_END() \
+    AnnotateIgnoreWritesEnd(__FILE__, __LINE__)
+#else
+#define TSAN_ANNOTATE_IGNORE_WRITES_BEGIN()
+#define TSAN_ANNOTATE_IGNORE_WRITES_END()
+#endif
+
 namespace ht {
+
+class CowString final {
+public:
+    CowString(std::string &&value) noexcept :
+        value(std::in_place_index<1>, std::forward<std::string>(value)) {
+    }
+    CowString(const std::string_view &value) noexcept :
+        value(std::in_place_index<0>, value) {
+    }
+
+    CowString(const CowString &) = delete;
+    CowString(CowString &&) = default;
+
+    CowString &operator=(const CowString &) = delete;
+    CowString &operator=(CowString &&) = default;
+
+    CowString as_ref() const noexcept {
+        return CowString(get());
+    }
+    CowString clone() const noexcept {
+        switch (value.index()) {
+        case 0:
+            return CowString(std::get<0>(value));
+        case 1:
+            return CowString(std::string(std::get<1>(value)));
+        }
+        __builtin_unreachable();
+    }
+
+    std::string_view get() const noexcept {
+        switch (value.index()) {
+        case 0:
+            return std::get<0>(value);
+        case 1:
+            return std::get<1>(value);
+        }
+        __builtin_unreachable();
+    }
+    std::string_view operator*() const noexcept {
+        return get();
+    }
+
+private:
+    std::variant<std::string_view, std::string> value;
+};
+
+namespace internal {
+
+[[noreturn]] static inline void panic(std::string_view message) noexcept {
+    std::fwrite(message.data(), 1, message.size(), stderr);
+    std::terminate();
+}
+
+static inline void warning(std::string_view message) noexcept {
+    std::fwrite(message.data(), 1, message.size(), stderr);
+}
+
+static inline bool parse_env(const char *name, bool default_value) noexcept {
+    using namespace std::string_view_literals;
+    const char *env = std::getenv(name);
+    if (env == nullptr || env[0] == '\0') {
+        return default_value;
+    }
+    if ("0"sv == env) {
+        return false;
+    }
+    if ("1"sv == env) {
+        return true;
+    }
+    ht::internal::warning("warning: ht::internal::env::getenv: environment variable "sv);
+    ht::internal::warning(name);
+    ht::internal::warning(default_value ? "does not contain either 0 or 1, using default value: 1\n"sv : "does not contain either 0 or 1, using default value: 0\n"sv);
+    return default_value;
+}
+
+static inline std::size_t parse_env(const char *name, std::size_t default_value) noexcept {
+    using namespace std::string_view_literals;
+    const char *env = std::getenv(name);
+    if (env == nullptr || env[0] == '\0') {
+        return default_value;
+    }
+    std::string_view env_str = env;
+    std::size_t result;
+    if (std::from_chars(env_str.begin(), env_str.end(), result).ec == std::errc{}) {
+        return result;
+    }
+    ht::internal::warning("warning: ht::internal::env::getenv: environment variable "sv);
+    ht::internal::warning(name);
+    ht::internal::warning("does not contain a valid number, using default value: "sv);
+    ht::internal::warning(std::to_string(default_value));
+    ht::internal::warning("\n"sv);
+    return default_value;
+}
+
+static inline std::string_view parse_env(const char *name, std::string_view default_value) noexcept {
+    using namespace std::string_view_literals;
+    const char *env = std::getenv(name);
+    if (env == nullptr || env[0] == '\0') {
+        return default_value;
+    }
+    return env;
+}
+
+namespace compat {
+
+std::timespec clock_gettime_monotonic();
+std::timespec clock_gettime_realtime();
+void close(int fd);
+int close_noexcept(int fd) noexcept;
+std::uint64_t getpid() noexcept;
+std::uint64_t gettid() noexcept;
+std::tm gmtime(const std::time_t *timep);
+int mkostemps_cloexec(char *path, int slen);
+void pthread_setname_self_noexcept(const char *name) noexcept;
+std::size_t strftime(char *__restrict__ s, std::size_t max, const char *__restrict__ format, const std::tm *tm) noexcept;
+std::time_t time(std::time_t *tloc);
+std::size_t write(int fd, const void *buf, std::size_t nbyte);
+
+} // namespace compat
+
+namespace file {
+
+class TempFile final {
+public:
+    explicit TempFile(std::string_view prefix, std::string_view suffix, std::size_t buffer_size = 4096) :
+        buf_cap(buffer_size) {
+        assert(buffer_size != 0);
+        if (prefix.find('\0') != std::string_view::npos || suffix.find('\0') != std::string_view::npos) {
+            throw std::invalid_argument("filename contains NUL byte");
+        }
+
+        std::time_t now = ht::internal::compat::time(nullptr);
+        std::tm tm = ht::internal::compat::gmtime(&now);
+        std::array<char, 21> date_buffer;
+        std::size_t date_len = ht::internal::compat::strftime(date_buffer.data(), date_buffer.size(), "%Y-%m-%dT%H-%M-%SZ", &tm);
+
+        filename.reserve(prefix.size() + suffix.size() + 28);
+        filename.append(prefix);
+        filename.push_back('_');
+        filename.append(date_buffer.data(), date_len);
+        filename.push_back('_');
+        filename.append(6, 'X');
+        filename.append(suffix);
+
+        fd = ht::internal::compat::mkostemps_cloexec(filename.data(), suffix.size());
+        buf = std::make_unique_for_overwrite<std::byte[]>(buffer_size);
+    }
+
+    explicit TempFile(int fd, std::size_t buffer_size = 4096) :
+        buf(std::make_unique_for_overwrite<std::byte[]>(buffer_size)),
+        buf_cap(buffer_size),
+        fd(fd) {
+        assert(fd != -1);
+        assert(buffer_size != 0);
+    }
+
+    ~TempFile() noexcept(false) {
+        if (fail) {
+            ht::internal::compat::close_noexcept(fd);
+            return;
+        }
+        try {
+            do_flush();
+        } catch (...) {
+            ht::internal::compat::close_noexcept(fd);
+            throw;
+        }
+        ht::internal::compat::close(fd);
+    }
+
+    std::size_t flush() {
+        if (fail) {
+            std::terminate();
+        }
+        return do_flush();
+    }
+
+private:
+    std::size_t do_write(std::span<const std::byte> data) {
+        try {
+            return ht::internal::compat::write(fd, data.data(), data.size());
+        } catch (...) {
+            fail = true;
+            throw;
+        }
+    }
+
+    std::size_t do_flush() {
+        std::size_t bytes_written = 0;
+        while (buf_front != buf_back) {
+            std::size_t bytes_count = do_write(std::span(&buf[buf_front], &buf[buf_back]));
+            buf_front += bytes_count;
+            bytes_written += bytes_count;
+        }
+        buf_front = 0;
+        buf_back = 0;
+        return bytes_written;
+    }
+
+public:
+    int get_fd() const noexcept {
+        return fd;
+    }
+
+    const std::string &get_filename() const noexcept {
+        return filename;
+    }
+
+    std::size_t write(std::span<const std::byte> data) {
+        if (fail) {
+            std::terminate();
+        }
+        std::size_t bytes_written = 0;
+        while (!data.empty()) {
+            if (data.size() >= buf_cap - buf_back) {
+                // We need to flush at least once
+                if (buf_front == buf_back) {
+                    // The buffer is empty, skip buffering
+                    std::size_t bytes_count = do_write(data);
+                    bytes_written += bytes_count;
+                    data = data.subspan(bytes_count);
+                } else {
+                    // Append the data to the buffer, then flush
+                    std::size_t bytes_count = buf_cap - buf_back;
+                    std::copy_n(data.data(), bytes_count, &buf[buf_back]);
+                    buf_back = buf_cap;
+                    bytes_written += do_flush();
+                    data = data.subspan(bytes_count);
+                }
+            } else {
+                // We don't need to flush
+                std::size_t bytes_count = data.size();
+                std::copy_n(data.data(), bytes_count, &buf[buf_back]);
+                buf_back += bytes_count;
+                break;
+            }
+        }
+        return bytes_written;
+    }
+
+    std::size_t write(std::initializer_list<const std::byte> data) {
+        return write(std::span(data.begin(), data.end()));
+    }
+
+    std::size_t write(std::string_view str) {
+        return write(std::span<const std::byte>(reinterpret_cast<const std::byte *>(str.data()), str.size()));
+    }
+
+    std::size_t write(const std::string &str) {
+        return write(std::span(reinterpret_cast<const std::byte *>(str.data()), str.size()));
+    }
+
+private:
+    std::unique_ptr<std::byte[]> buf;
+    std::size_t buf_front = 0;
+    std::size_t buf_back = 0;
+    std::size_t buf_cap;
+    std::string filename;
+    int fd;
+    int fail = false;
+};
+
+} // namespace file
+
+namespace mpsc {
+
+template <typename T>
+class Writer;
+
+template <typename T>
+class Reader final {
+    friend class Writer<T>;
+
+private:
+    static constexpr std::size_t Align = 64;
+
+    enum class SlotStatus : std::uint_fast8_t {
+        Empty = 0,
+        Value = 1,
+        Closing = 2
+    };
+
+    class Slot final {
+    public:
+        alignas(Align) std::atomic_uint_fast8_t status = std::underlying_type_t<SlotStatus>(SlotStatus::Empty);
+        alignas(T) std::array<std::byte, sizeof(T)> msg = {};
+    };
+
+public:
+    explicit Reader(std::size_t cap) noexcept :
+        buffer(std::make_unique<Slot[]>(cap)),
+        cap(cap) {
+        assert(cap != 0);
+    }
+
+    ~Reader() noexcept {
+        using namespace std::string_view_literals;
+        std::size_t writer_count = this->writer_count.load(std::memory_order::acquire);
+        if (writer_count != 0) {
+            ht::internal::panic("panic: ht::internal::mpsc::Reader::~Reader: channel not closed properly\n"sv);
+        }
+    }
+
+    typename std::atomic_unsigned_lock_free::value_type get_stall_count() const noexcept {
+        return stall_count.load(std::memory_order::relaxed);
+    }
+
+    Writer<T> new_writer() noexcept {
+        return Writer<T>(*this);
+    }
+
+private:
+    std::pair<Slot &, SlotStatus> before_read() noexcept {
+        using namespace std::string_view_literals;
+        Slot &slot = buffer[front];
+        SlotStatus status;
+        {
+            std::unique_lock lock_read(mtx_read);
+            // Tell the writing thread we may need a wake-up
+            bool is_reading_false = false;
+            if (!is_reading.compare_exchange_strong(is_reading_false, true, std::memory_order::relaxed, std::memory_order::relaxed)) {
+                ht::internal::panic("panic: ht::internal::mpsc::Reader::before_read: more than one threads are reading\n");
+            }
+            status = SlotStatus(slot.status.load(std::memory_order::acquire));
+            // Test if the front element is ready.
+            while (status == SlotStatus::Empty) {
+                cnd_read.wait(lock_read);
+                status = SlotStatus(slot.status.load(std::memory_order::acquire));
+            }
+            is_reading.store(false, std::memory_order::relaxed);
+        }
+        return {std::ref(slot), status};
+    }
+
+public:
+    std::optional<T> read() noexcept {
+        std::optional<T> result;
+        std::size_t writer_count = this->writer_count.load(std::memory_order::acquire);
+
+        while (!result.has_value() && writer_count != 0) {
+            auto [slot, status] = before_read();
+
+            switch (status) {
+            case SlotStatus::Empty:
+                __builtin_unreachable();
+                break;
+            case SlotStatus::Value: {
+                // Move the data
+                T *msg = std::launder(reinterpret_cast<T *>(slot.msg.data()));
+                // I have no idea why ThreadSanitizer yells at me.
+                // Am I doing wrong? Or is it a limitation of TSan?
+                // https://stackoverflow.com/q/37552866/2557927
+                TSAN_ANNOTATE_IGNORE_WRITES_BEGIN();
+                result.emplace(std::move(*msg));
+                msg->~T();
+                TSAN_ANNOTATE_IGNORE_WRITES_END();
+                break;
+            }
+            case SlotStatus::Closing:
+                writer_count = this->writer_count.fetch_sub(1, std::memory_order::acquire) - 1;
+                break;
+            }
+
+            after_read(slot);
+        }
+        return result;
+    }
+
+private:
+    void after_read(Slot &slot) noexcept {
+        // Release an index to front
+        front = front + 1 != cap ? front + 1 : 0;
+        slot.status.store(std::underlying_type_t<SlotStatus>(SlotStatus::Empty), std::memory_order::release);
+
+        {
+            std::unique_lock lock_write(mtx_write);
+            // Release a slot
+            size.fetch_sub(1, std::memory_order::release);
+            // Wake up the writing thread
+            cnd_write.notify_one();
+        }
+    }
+
+private:
+    std::mutex mtx_read;
+    std::mutex mtx_write;
+    std::condition_variable cnd_read;
+    std::condition_variable cnd_write;
+    std::atomic_size_t size = 0;
+    std::atomic_size_t back = 0;
+    std::atomic_size_t writer_count = 0;
+    std::atomic_unsigned_lock_free stall_count = 0;
+    std::atomic_bool is_reading = false;
+
+    alignas(Align) std::unique_ptr<Slot[]> buffer;
+    std::size_t cap;
+    std::size_t front = 0;
+};
+
+template <typename T>
+class Writer final {
+    friend class Reader<T>;
+
+private:
+    typedef Reader<T>::SlotStatus SlotStatus;
+    typedef Reader<T>::Slot Slot;
+
+    explicit Writer() noexcept :
+        r(nullptr) {
+    }
+
+    explicit Writer(Reader<T> &reader) noexcept :
+        r(&reader) {
+        r->writer_count.fetch_add(1, std::memory_order::release);
+    }
+
+public:
+    explicit Writer(const Writer &other) noexcept :
+        r(other.r) {
+        r->writer_count.fetch_add(1, std::memory_order::release);
+    }
+
+    explicit Writer(Writer &&other) noexcept = default;
+
+    ~Writer() noexcept {
+        close();
+    }
+
+    Writer &operator=(const Writer &other) noexcept {
+        other.r->writer_count.fetch_add(1, std::memory_order::release);
+        close();
+        r = other.r;
+        return *this;
+    }
+
+    Writer &operator=(Writer &&other) noexcept = default;
+
+private:
+    static Slot &before_write(Reader<T> &r) noexcept {
+        std::atomic_size_t &atomic_size = r.size;
+        std::size_t cap = r.cap;
+
+        std::size_t size = atomic_size.load(std::memory_order::relaxed);
+        bool acquired = false;
+        while (!acquired) {
+            if (size >= cap) {
+                // Queue is full
+                r.stall_count.fetch_add(1, std::memory_order::relaxed);
+                std::unique_lock lock_write(r.mtx_write);
+                while (!acquired) {
+                    if (size >= cap) {
+                        r.cnd_write.wait(lock_write);
+                        size = atomic_size.load(std::memory_order::relaxed);
+                    } else {
+                        // Acquire a slot (slow path)
+                        acquired = atomic_size.compare_exchange_weak(size, size + 1, std::memory_order::acquire, std::memory_order::relaxed);
+#if defined(__amd64__) || defined(__i386__)
+                        if (!acquired) {
+                            __builtin_ia32_pause();
+                        }
+#endif
+                    }
+                }
+            } else {
+                // Acquire a slot (fast path)
+                acquired = atomic_size.compare_exchange_weak(size, size + 1, std::memory_order::acquire, std::memory_order::relaxed);
+#if defined(__amd64__) || defined(__i386__)
+                if (!acquired) {
+                    __builtin_ia32_pause();
+                }
+#endif
+            }
+        }
+        // Allocate an index from back
+        std::atomic_size_t &atomic_back = r.back;
+        std::size_t back = atomic_back.fetch_add(1, std::memory_order::relaxed);
+        if (back + 1 >= cap) {
+            // Wrap around
+            std::size_t back_wrap = back + 1;
+            if (back >= cap) {
+                back %= cap;
+            }
+            // Either we successfully wrapped the index,
+            // or we can verify another thread wrapped it
+            while (
+                !atomic_back.compare_exchange_weak(back_wrap, back_wrap % cap, std::memory_order::relaxed, std::memory_order::relaxed) &&
+                back_wrap >= cap
+            ) {
+#if defined(__amd64__) || defined(__i386__)
+                __builtin_ia32_pause();
+#endif
+            }
+            // Now, back_wrap stores the *latest* back index,
+            // which may not be the index allocated for us.
+            // We must discard back_wrap now.
+        }
+        return r.buffer[back];
+    }
+
+public:
+    void write(T &&msg) noexcept {
+        Reader<T> &r = *this->r;
+        Slot &slot = before_write(r);
+        // I have no idea why ThreadSanitizer yells at me.
+        // Am I doing wrong? Or is it a limitation of TSan?
+        // https://stackoverflow.com/q/37552866/2557927
+        TSAN_ANNOTATE_IGNORE_WRITES_BEGIN();
+        new (slot.msg.data()) T(std::move(msg));
+        TSAN_ANNOTATE_IGNORE_WRITES_END();
+        after_write(r, slot, SlotStatus::Value);
+    }
+
+    void close() noexcept {
+        if (this->r == nullptr) {
+            return;
+        }
+        Reader<T> &r = *this->r;
+        this->r = nullptr;
+        Slot &slot = before_write(r);
+        after_write(r, slot, SlotStatus::Closing);
+    }
+
+private:
+    static void after_write(Reader<T> &r, Slot &slot, SlotStatus status) noexcept {
+        using namespace std::string_view_literals;
+        // Set the status
+        auto status_empty = std::underlying_type_t<SlotStatus>(SlotStatus::Empty);
+        if (!slot.status.compare_exchange_strong(status_empty, std::underlying_type_t<SlotStatus>(status), std::memory_order::release, std::memory_order::relaxed)) {
+            ht::internal::panic("panic: ht::mpsc::Writer::after_write: memory corruption\n"sv);
+        }
+        // Wake up the reading thread
+        if (r.is_reading.load(std::memory_order::relaxed)) {
+            std::unique_lock lock_read(r.mtx_read);
+            r.cnd_read.notify_one();
+        }
+    }
+
+private:
+    Reader<T> *r;
+};
+
+} // namespace mpsc
+
+namespace msg {
+
+extern thread_local std::uint64_t last_pid;
+extern thread_local std::uint64_t last_tid;
+extern thread_local bool pid_tid_avail;
+
+void get_pid_tid() noexcept;
+
+class ID final {
+public:
+    explicit ID() noexcept :
+        tid(ht::internal::compat::gettid()), mid(++last_mid) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({
+            std::byte(0xd8),
+            std::byte(0x27),
+            std::byte(0x50),
+            std::byte(tid >> 56),
+            std::byte(tid >> 48),
+            std::byte(tid >> 40),
+            std::byte(tid >> 32),
+            std::byte(tid >> 24),
+            std::byte(tid >> 16),
+            std::byte(tid >> 8),
+            std::byte(tid),
+            std::byte(mid >> 56),
+            std::byte(mid >> 48),
+            std::byte(mid >> 40),
+            std::byte(mid >> 32),
+            std::byte(mid >> 24),
+            std::byte(mid >> 16),
+            std::byte(mid >> 8),
+            std::byte(mid),
+        });
+    }
+
+    // Thread ID
+    std::uint64_t tid;
+    // Message ID
+    std::uint64_t mid;
+
+private:
+    static thread_local std::uint64_t last_mid;
+};
+
+class Null final {
+public:
+    static std::size_t write_to(ht::internal::file::TempFile &file) {
+        return file.write({std::byte(0xf6)});
+    }
+};
+
+class Bool final {
+public:
+    explicit Bool(bool value) noexcept :
+        value(value) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({value ? std::byte(0xf5) : std::byte(0xf4)});
+    }
+
+    std::uint8_t value;
+};
+
+class UInt final {
+public:
+    explicit UInt(std::uint64_t value, std::uint8_t tag = 0) noexcept :
+        value(value),
+        tag(tag) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        std::uint64_t value;
+        std::size_t len;
+        std::uint8_t tag;
+        if (this->value <= 24) {
+            value = 0;
+            len = 1;
+            tag = this->tag | std::uint8_t(this->value);
+        } else if (this->value <= 0x100) {
+            value = this->value << 56;
+            tag = this->tag | std::uint8_t(0x18);
+            len = 2;
+        } else if (this->value <= 0x10000) {
+            value = this->value << 48;
+            tag = this->tag | std::uint8_t(0x19);
+            len = 3;
+        } else if (this->value <= 0x100000000) {
+            value = this->value << 32;
+            tag = this->tag | std::uint8_t(0x1a);
+            len = 5;
+        } else {
+            value = this->value;
+            tag = this->tag | std::uint8_t(0x1b);
+            len = 9;
+        }
+
+        std::array<std::uint64_t, 2> buffer_64;
+        alignas(std::uint64_t) std::byte *buffer = reinterpret_cast<std::byte *>(buffer_64.data());
+        buffer[7] = std::byte(tag);
+        buffer[8] = std::byte(value >> 56);
+        buffer[9] = std::byte(value >> 48);
+        buffer[10] = std::byte(value >> 40);
+        buffer[11] = std::byte(value >> 32);
+        buffer[12] = std::byte(value >> 24);
+        buffer[13] = std::byte(value >> 16);
+        buffer[14] = std::byte(value >> 8);
+        buffer[15] = std::byte(value);
+
+        return file.write(std::span(&buffer[7], len));
+    }
+
+    std::uint64_t value;
+    std::uint8_t tag;
+};
+
+class Int final {
+public:
+    explicit Int(std::int64_t value) noexcept :
+        value(value) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return (value >= 0 ? UInt(value) : UInt(~value, 0x20)).write_to(file);
+    }
+
+    std::int64_t value;
+};
+
+class Float32 final {
+public:
+    explicit Float32(float value) noexcept :
+        value(value) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        std::uint32_t value = std::bit_cast<std::uint32_t>(this->value);
+        return file.write({
+            std::byte(0xfa),
+            std::byte(value >> 24),
+            std::byte(value >> 16),
+            std::byte(value >> 8),
+            std::byte(value),
+        });
+    }
+
+    float value;
+};
+
+class Float64 final {
+public:
+    explicit Float64(double value) noexcept :
+        value(value) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        std::uint64_t value = std::bit_cast<std::uint64_t>(this->value);
+        return file.write({
+            std::byte(0xfb),
+            std::byte(value >> 56),
+            std::byte(value >> 48),
+            std::byte(value >> 40),
+            std::byte(value >> 32),
+            std::byte(value >> 24),
+            std::byte(value >> 16),
+            std::byte(value >> 8),
+            std::byte(value),
+        });
+    }
+
+    double value;
+};
+
+class String final {
+public:
+    String(CowString &&value) noexcept :
+        value(std::move(value)) {
+    }
+
+    String as_ref() const noexcept {
+        return String(value.as_ref());
+    }
+
+    std::string_view get() const noexcept {
+        return value.get();
+    }
+    std::string_view operator*() const noexcept {
+        return *value;
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        std::string_view str = get();
+        return UInt(str.size(), 0x60).write_to(file) + file.write(str);
+    }
+
+    CowString value;
+};
+
+class BeginArray final {
+public:
+    explicit BeginArray(const ID &id) noexcept :
+        id(id) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({std::byte(0x82)}) + id.write_to(file) + file.write({std::byte(0x80)});
+    }
+
+    ID id;
+};
+
+class BeginMap final {
+public:
+    explicit BeginMap(const ID &id) noexcept :
+        id(id) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({std::byte(0x82)}) + id.write_to(file) + file.write({std::byte(0xa0)});
+    }
+
+    ID id;
+};
+
+class Duration final {
+public:
+    explicit Duration() noexcept :
+        value({}) {
+    }
+    explicit Duration(const std::timespec &value) noexcept :
+        value(value) {
+    }
+
+    Duration &operator+=(const Duration &other) noexcept {
+        value.tv_sec += other.value.tv_sec;
+        value.tv_nsec += other.value.tv_nsec;
+        if (value.tv_nsec >= 1'000'000'000) {
+            value.tv_sec++;
+            value.tv_nsec -= 1'000'000'000;
+        }
+        return *this;
+    }
+
+    Duration operator+(const Duration &other) const noexcept {
+        auto tv_sec = value.tv_sec + other.value.tv_sec;
+        auto tv_nsec = value.tv_nsec + other.value.tv_nsec;
+        if (tv_nsec >= 1'000'000'000) {
+            tv_sec++;
+            tv_nsec -= 1'000'000'000;
+        }
+        return Duration(std::timespec{
+            .tv_sec = tv_sec,
+            .tv_nsec = tv_nsec,
+        });
+    }
+
+    std::timespec value;
+};
+
+class Timestamp final {
+public:
+    explicit Timestamp() noexcept :
+        value({}) {
+    }
+    explicit Timestamp(const std::timespec &value) noexcept :
+        value(value) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({
+                   std::byte(0xd9),
+                   std::byte(0x03),
+                   std::byte(0xe9),
+                   std::byte(0xa2),
+                   std::byte(0x01),
+               }) +
+               Int(value.tv_sec).write_to(file) +
+               file.write({std::byte(0x28)}) +
+               Int(value.tv_nsec).write_to(file);
+    }
+
+    Timestamp &operator+=(const Duration &offset) noexcept {
+        value.tv_sec += offset.value.tv_sec;
+        value.tv_nsec += offset.value.tv_nsec;
+        if (value.tv_nsec >= 1'000'000'000) {
+            value.tv_sec++;
+            value.tv_nsec -= 1'000'000'000;
+        }
+        return *this;
+    }
+
+    Timestamp operator+(const Duration &offset) const noexcept {
+        auto tv_sec = value.tv_sec + offset.value.tv_sec;
+        auto tv_nsec = value.tv_nsec + offset.value.tv_nsec;
+        if (tv_nsec >= 1'000'000'000) {
+            tv_sec++;
+            tv_nsec -= 1'000'000'000;
+        }
+        return Timestamp(std::timespec{
+            .tv_sec = tv_sec,
+            .tv_nsec = tv_nsec,
+        });
+    }
+
+    Duration operator-(const Timestamp &since) const noexcept {
+        auto tv_sec = value.tv_sec - since.value.tv_sec;
+        auto tv_nsec = value.tv_nsec - since.value.tv_nsec;
+        if (value.tv_nsec < since.value.tv_nsec) {
+            tv_sec--;
+            tv_nsec += 1'000'000'000;
+        }
+        return Duration(std::timespec{
+            .tv_sec = tv_sec,
+            .tv_nsec = tv_nsec,
+        });
+    }
+
+    std::timespec value;
+};
+
+class Value final {
+public:
+    typedef std::optional<String> KeyType;
+    typedef std::variant<Null, Bool, UInt, Int, Float32, Float64, String, BeginArray, BeginMap, Timestamp> ValueType;
+
+    explicit Value(const ID &parent, std::nullopt_t, Null) noexcept :
+        parent(parent) {
+    }
+    explicit Value(const ID &parent, std::nullopt_t, const Bool &value) noexcept :
+        parent(parent), value(std::in_place_index<1>, value) {
+    }
+    explicit Value(const ID &parent, std::nullopt_t, const UInt &value) noexcept :
+        parent(parent), value(std::in_place_index<2>, value) {
+    }
+    explicit Value(const ID &parent, std::nullopt_t, const Int &value) noexcept :
+        parent(parent), value(std::in_place_index<3>, value) {
+    }
+    explicit Value(const ID &parent, std::nullopt_t, const Float32 &value) noexcept :
+        parent(parent), value(std::in_place_index<4>, value) {
+    }
+    explicit Value(const ID &parent, std::nullopt_t, const Float64 &value) noexcept :
+        parent(parent), value(std::in_place_index<5>, value) {
+    }
+    explicit Value(const ID &parent, std::nullopt_t, String &&value) noexcept :
+        parent(parent), value(std::in_place_index<6>, std::move(value)) {
+    }
+    explicit Value(const ID &parent, std::nullopt_t, const BeginArray &value) noexcept :
+        parent(parent), value(std::in_place_index<7>, value) {
+    }
+    explicit Value(const ID &parent, std::nullopt_t, const BeginMap &value) noexcept :
+        parent(parent), value(std::in_place_index<8>, value) {
+    }
+    explicit Value(const ID &parent, std::nullopt_t, const Timestamp &value) noexcept :
+        parent(parent), value(std::in_place_index<9>, value) {
+    }
+    explicit Value(const ID &parent, String &&key, Null) noexcept :
+        parent(parent), key(std::in_place, std::move(key)) {
+    }
+    explicit Value(const ID &parent, String &&key, const Bool &value) noexcept :
+        parent(parent), key(std::in_place, std::move(key)), value(std::in_place_index<1>, value) {
+    }
+    explicit Value(const ID &parent, String &&key, const UInt &value) noexcept :
+        parent(parent), key(std::in_place, std::move(key)), value(std::in_place_index<2>, value) {
+    }
+    explicit Value(const ID &parent, String &&key, const Int &value) noexcept :
+        parent(parent), key(std::in_place, std::move(key)), value(std::in_place_index<3>, value) {
+    }
+    explicit Value(const ID &parent, String &&key, const Float32 &value) noexcept :
+        parent(parent), key(std::in_place, std::move(key)), value(std::in_place_index<4>, value) {
+    }
+    explicit Value(const ID &parent, String &&key, const Float64 &value) noexcept :
+        parent(parent), key(std::in_place, std::move(key)), value(std::in_place_index<5>, value) {
+    }
+    explicit Value(const ID &parent, String &&key, String &&value) noexcept :
+        parent(parent), key(std::in_place, std::move(key)), value(std::in_place_index<6>, std::move(value)) {
+    }
+    explicit Value(const ID &parent, String &&key, const BeginArray &value) noexcept :
+        parent(parent), key(std::in_place, std::move(key)), value(std::in_place_index<7>, value) {
+    }
+    explicit Value(const ID &parent, String &&key, const BeginMap &value) noexcept :
+        parent(parent), key(std::in_place, std::move(key)), value(std::in_place_index<8>, value) {
+    }
+    explicit Value(const ID &parent, String &&key, const Timestamp &value) noexcept :
+        parent(parent), key(std::in_place, std::move(key)), value(std::in_place_index<9>, value) {
+    }
+
+    Value(const Value &) = delete;
+    Value(Value &&) = default;
+    Value &operator=(const Value &) = delete;
+    Value &operator=(Value &&) = default;
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        std::size_t bytes_written = file.write({std::byte(0x82)}) + parent.write_to(file);
+        if (key.has_value()) {
+            bytes_written += file.write({std::byte(0xa1)}) + key->write_to(file);
+        } else {
+            bytes_written += file.write({std::byte(0x81)});
+        }
+        bytes_written += std::visit([&file](const auto &value) { return value.write_to(file); }, value);
+        return bytes_written;
+    }
+
+public:
+    ID parent;
+    KeyType key;
+    ValueType value;
+};
+
+class EndValue final {
+public:
+    explicit EndValue(const ID &parent) noexcept :
+        parent(parent) {
+    }
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return file.write({std::byte(0x81)}) + parent.write_to(file);
+    }
+
+    ID parent;
+};
+
+class Event final {
+public:
+    explicit Event(String &&name, String &&cat, String &&ph, const Timestamp &ts) noexcept :
+        name(std::move(name)),
+        cat(std::move(cat)),
+        ph(std::move(ph)),
+        ts(ts),
+        pid(ht::internal::compat::getpid()),
+        tid(ht::internal::compat::gettid()) {
+    }
+
+    Event(const Event &) = delete;
+    Event(Event &&) = default;
+    Event &operator=(const Event &) = delete;
+    Event &operator=(Event &&) = default;
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        using namespace std::string_view_literals;
+
+        return BeginMap(id).write_to(file) +
+               Value(id, String("name"sv), name.as_ref()).write_to(file) +
+               Value(id, String("cat"sv), cat.as_ref()).write_to(file) +
+               Value(id, String("ph"sv), ph.as_ref()).write_to(file) +
+               Value(id, String("ts"sv), Timestamp(ts)).write_to(file) +
+               Value(id, String("pid"sv), UInt(pid)).write_to(file) +
+               Value(id, String("tid"sv), UInt(tid)).write_to(file);
+    }
+
+    ID id;
+    String name;
+    String cat;
+    String ph;
+    Timestamp ts;
+    UInt pid;
+    UInt tid;
+
+private:
+    static std::uint64_t get_pid() noexcept {
+        if (!pid_tid_avail) {
+            get_pid_tid();
+            pid_tid_avail = true;
+        }
+        return last_pid;
+    }
+};
+
+class Message final {
+public:
+    typedef std::variant<Value, EndValue, Event> ValueType;
+
+    explicit Message(Value &&value) noexcept :
+        value(std::in_place_index<0>, std::move(value)) {
+    }
+    explicit Message(EndValue &&value) noexcept :
+        value(std::in_place_index<1>, std::move(value)) {
+    }
+    explicit Message(Event &&value) noexcept :
+        value(std::in_place_index<2>, std::move(value)) {
+    }
+
+    Message(const Message &) = delete;
+    Message(Message &&) = default;
+    Message &operator=(const Message &) = delete;
+    Message &operator=(Message &&) = default;
+
+    std::size_t write_to(ht::internal::file::TempFile &file) const {
+        return std::visit([&file](const auto &value) { return value.write_to(file); }, value);
+    }
+
+    ValueType value;
+};
+
+} // namespace msg
+
+} // namespace internal
 
 class PayloadMap;
 
@@ -37,7 +1112,7 @@ private:
     class Internal final {
     public:
         explicit Internal(Tracer &parent, std::string_view prefix, std::string_view suffix) :
-            chan_reader(ht::internal::env::getenv("HYPERTRACER_THREAD_BUFFER", std::max<std::size_t>(std::thread::hardware_concurrency() * 128, 64))),
+            chan_reader(ht::internal::parse_env("HYPERTRACER_THREAD_BUFFER", std::max<std::size_t>(std::thread::hardware_concurrency() * 128, 64))),
             chan_writer(chan_reader.new_writer()) {
             std::promise<FileInfo> info_promise;
             auto info_future = info_promise.get_future();
@@ -46,14 +1121,14 @@ private:
             thread = std::thread(
                 &Internal::thread_main,
                 this,
-                ht::internal::env::getenv("HYPERTRACER_OUTPUT", prefix),
+                ht::internal::parse_env("HYPERTRACER_OUTPUT", prefix),
                 suffix,
-                ht::internal::env::getenv("HYPERTRACER_FILE_BUFFER", std::size_t(4096)),
+                ht::internal::parse_env("HYPERTRACER_FILE_BUFFER", std::size_t(4096)),
                 std::move(info_promise),
                 std::move(error_promise)
             );
             parent.info = info_future.get();
-            timediff = get_timediff();
+            timediff = ht::internal::msg::Timestamp(ht::internal::compat::clock_gettime_realtime()) - ht::internal::msg::Timestamp(ht::internal::compat::clock_gettime_monotonic());
         }
 
         ~Internal() noexcept(false) {
@@ -62,13 +1137,62 @@ private:
             error.get();
         }
 
-    public:
-        ht::internal::msg::Timestamp now() const;
-
     private:
-        void thread_main(std::string_view prefix, std::string_view suffix, std::size_t buffer_size, std::promise<FileInfo> info, std::promise<void> error) noexcept;
+        void thread_main(std::string_view prefix, std::string_view suffix, std::size_t buffer_size, std::promise<FileInfo> info, std::promise<void> error) noexcept {
+            using namespace std::string_view_literals;
+            ht::internal::compat::pthread_setname_self_noexcept("hypertracer");
 
-        static ht::internal::msg::Duration get_timediff();
+            std::optional<ht::internal::file::TempFile> file;
+            try {
+                file.emplace(prefix, suffix, buffer_size);
+            } catch (...) {
+                info.set_exception(std::current_exception());
+                error.set_value();
+                while (chan_reader.read().has_value()) {
+                }
+                return;
+            }
+            info.set_value(FileInfo{
+                .filename = file->get_filename(),
+                .fd = file->get_fd(),
+            });
+            try {
+                file->write({std::byte(0x9f)});
+                bool has_stalled = false;
+                for (;;) {
+                    if (!has_stalled) {
+                        if (chan_reader.get_stall_count() != 0) {
+                            has_stalled = true;
+                            ht::internal::warning("warning: ht::Tracer::Internal::thread_main: tracing cannot keep up. try increasing tracing buffer size through HYPERTRACER_THREAD_BUFFER or file buffer size through HYPERTRACER_FILE_BUFFER\n"sv);
+                        }
+                    }
+                    auto msg = chan_reader.read();
+                    if (!msg.has_value()) {
+                        break;
+                    }
+                    msg->write_to(*file);
+                }
+            } catch (...) {
+                file.reset();
+                error.set_exception(std::current_exception());
+                while (chan_reader.read().has_value()) {
+                }
+                return;
+            }
+            try {
+                file->write({std::byte(0xff)});
+            } catch (...) {
+                error.set_exception(std::current_exception());
+                return;
+            }
+            file.reset();
+            error.set_value();
+        }
+
+    public:
+        ht::internal::msg::Timestamp now() const {
+            return ht::internal::msg::Timestamp(ht::internal::compat::clock_gettime_monotonic()) + timediff;
+        }
 
     private:
         ht::internal::mpsc::Reader<ht::internal::msg::Message> chan_reader;
@@ -85,7 +1209,7 @@ private:
 public:
     Tracer(bool enable, std::string_view prefix, std::string_view suffix = std::string_view(".trace", 6)) :
         internal(
-            ht::internal::env::getenv("HYPERTRACER_ENABLED", enable) ?
+            ht::internal::parse_env("HYPERTRACER_ENABLED", enable) ?
                 std::optional<Internal>(std::in_place, *this, prefix, suffix) :
                 std::nullopt
         ) {
@@ -131,9 +1255,6 @@ public:
 
     ~Event() noexcept {
         using namespace std::string_view_literals;
-        if (!tracer.internal.has_value()) {
-            return;
-        }
         if (id.has_value()) {
             tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*id)));
         }
@@ -151,93 +1272,69 @@ public:
     };
 
     template <std::invocable<PayloadMap &> F>
-    inline auto push_args(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>())));
+    inline auto set_args(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>())));
+
+public:
+    Tracer &tracer;
 
 private:
-    Tracer &tracer;
     std::optional<std::pair<CowString, CowString>> end_info;
-    std::optional<ht::internal::msg::Open> id;
+
+public:
+    std::optional<ht::internal::msg::ID> id;
 };
 
 class PayloadArray final {
     friend class PayloadMap;
 
 private:
-    PayloadArray(Tracer &tracer, std::optional<ht::internal::msg::Open> id) noexcept :
-        tracer(tracer), id(id) {
+    PayloadArray(Tracer &tracer) noexcept :
+        tracer(tracer) {
+    }
+
+    ~PayloadArray() noexcept {
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(id)));
     }
 
 public:
-    ~PayloadArray() noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*id)));
-        }
-    }
-
     void push(std::nullptr_t) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, std::monostate{})));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Null())));
     }
     void push(bool value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Bool(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Bool(value))));
     }
     void push(std::uint64_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::UInt(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
     }
     void push(std::uint32_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::UInt(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
     }
     void push(std::uint16_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::UInt(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
     }
     void push(std::uint8_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::UInt(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
     }
     void push(std::int64_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Int(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
     }
     void push(std::int32_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Int(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
     }
     void push(std::int16_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Int(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
     }
     void push(std::int8_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Int(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
     }
     void push(float value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Float32(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Float32(value))));
     }
     void push(double value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Float64(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Float64(value))));
     }
     void push(CowString &&value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, std::move(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, std::move(value))));
     }
 
     template <std::invocable<PayloadArray &> F>
@@ -248,7 +1345,7 @@ public:
 
 public:
     Tracer &tracer;
-    std::optional<ht::internal::msg::Open> id;
+    ht::internal::msg::ID id;
 };
 
 class PayloadMap final {
@@ -256,81 +1353,53 @@ class PayloadMap final {
     friend class PayloadArray;
 
 private:
-    PayloadMap(Tracer &tracer, std::optional<ht::internal::msg::Open> id) noexcept :
-        tracer(tracer), id(id) {
+    PayloadMap(Tracer &tracer) noexcept :
+        tracer(tracer) {
     }
 
     ~PayloadMap() noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*id)));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(id)));
     }
 
 public:
     void push(CowString &&key, std::nullptr_t) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), std::monostate{})));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Null())));
     }
     void push(CowString &&key, bool value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Bool(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Bool(value))));
     }
     void push(CowString &&key, std::uint64_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
     }
     void push(CowString &&key, std::uint32_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
     }
     void push(CowString &&key, std::uint16_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
     }
     void push(CowString &&key, std::uint8_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::UInt(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
     }
     void push(CowString &&key, std::int64_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
     }
     void push(CowString &&key, std::int32_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
     }
     void push(CowString &&key, std::int16_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
     }
     void push(CowString &&key, std::int8_t value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Int(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
     }
     void push(CowString &&key, float value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Float32(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Float32(value))));
     }
     void push(CowString &&key, double value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Float64(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Float64(value))));
     }
     void push(CowString &&key, CowString &&value) noexcept {
-        if (tracer.internal.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), std::move(value))));
-        }
+        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), std::move(value))));
     }
 
     template <std::invocable<PayloadArray &> F>
@@ -341,24 +1410,17 @@ public:
 
 public:
     Tracer &tracer;
-    std::optional<ht::internal::msg::Open> id;
-    std::optional<ht::internal::msg::Open> parent;
+    ht::internal::msg::ID id;
 };
 
 template <std::invocable<PayloadMap &> F>
-inline auto Event::push_args(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
+inline auto Event::set_args(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
     using namespace std::string_view_literals;
     if (!tracer.internal.has_value()) {
         return;
     }
-    ht::internal::msg::Open child_id;
-    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(
-        *id,
-        CowString("args"sv),
-        ht::internal::msg::Open(child_id)
-    )));
-    PayloadMap child(tracer, child_id);
-
+    PayloadMap child(tracer);
+    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, CowString("args"sv), ht::internal::msg::BeginMap(child.id))));
     struct ScopeGuard {
         ~ScopeGuard() noexcept {
             self.tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*self.id)));
@@ -366,55 +1428,34 @@ inline auto Event::push_args(F &&f) noexcept(noexcept(f(std::declval<PayloadMap 
         }
         Event &self;
     } _scope_guard = {*this};
-
     return f(std::ref(child));
 }
 
 template <std::invocable<PayloadArray &> F>
 inline auto PayloadArray::push_array(F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>()))) {
-    using namespace std::string_view_literals;
-    if (!tracer.internal.has_value()) {
-        return;
-    }
-    ht::internal::msg::Open child_id;
-    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Open(child_id))));
-    PayloadArray child(tracer, child_id);
+    PayloadArray child(tracer);
+    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::BeginArray(child.id))));
     return f(std::ref(child));
 }
 
 template <std::invocable<PayloadMap &> F>
 inline auto PayloadArray::push_map(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
-    using namespace std::string_view_literals;
-    if (!tracer.internal.has_value()) {
-        return;
-    }
-    ht::internal::msg::Open child_id;
-    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::nullopt, ht::internal::msg::Open(child_id))));
-    PayloadMap child(tracer, child_id);
+    PayloadMap child(tracer);
+    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::BeginMap(child.id))));
     return f(std::ref(child));
 }
 
 template <std::invocable<PayloadArray &> F>
 inline auto PayloadMap::push_array(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>()))) {
-    using namespace std::string_view_literals;
-    if (!tracer.internal.has_value()) {
-        return;
-    }
-    ht::internal::msg::Open child_id;
-    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Open(child_id))));
-    PayloadArray child(tracer, child_id);
+    PayloadArray child(tracer);
+    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::BeginArray(child.id))));
     return f(std::ref(child));
 }
 
 template <std::invocable<PayloadMap &> F>
 inline auto PayloadMap::push_map(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
-    using namespace std::string_view_literals;
-    if (!tracer.internal.has_value()) {
-        return;
-    }
-    ht::internal::msg::Open child_id;
-    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, std::move(key), ht::internal::msg::Open(child_id))));
-    PayloadMap child(tracer, child_id);
+    PayloadMap child(tracer);
+    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::BeginMap(child.id))));
     return f(std::ref(child));
 }
 
