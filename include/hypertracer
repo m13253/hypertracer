@@ -240,14 +240,12 @@ private:
     }
 
     std::size_t do_flush() {
+        std::size_t bytes_to_write = buf_size;
         std::size_t bytes_written = 0;
-        while (buf_front != buf_back) {
-            std::size_t bytes_count = do_write(std::span(&buf[buf_front], &buf[buf_back]));
-            buf_front += bytes_count;
-            bytes_written += bytes_count;
+        while (bytes_written != bytes_to_write) {
+            bytes_written += do_write(std::span<const std::byte>(&buf[bytes_written], &buf[bytes_to_write]));
         }
-        buf_front = 0;
-        buf_back = 0;
+        buf_size = 0;
         return bytes_written;
     }
 
@@ -266,27 +264,25 @@ public:
         }
         std::size_t bytes_written = 0;
         while (!data.empty()) {
-            if (data.size() >= buf_cap - buf_back) {
-                // We need to flush at least once
-                if (buf_front == buf_back) {
-                    // The buffer is empty, skip buffering
-                    std::size_t bytes_count = do_write(data);
-                    bytes_written += bytes_count;
-                    data = data.subspan(bytes_count);
-                } else {
-                    // Append the data to the buffer, then flush
-                    std::size_t bytes_count = buf_cap - buf_back;
-                    std::copy_n(data.data(), bytes_count, &buf[buf_back]);
-                    buf_back = buf_cap;
-                    bytes_written += do_flush();
-                    data = data.subspan(bytes_count);
-                }
-            } else {
+            if (data.size() < buf_cap - buf_size) {
                 // We don't need to flush
                 std::size_t bytes_count = data.size();
-                std::copy_n(data.data(), bytes_count, &buf[buf_back]);
-                buf_back += bytes_count;
+                std::copy_n(data.data(), bytes_count, &buf[buf_size]);
+                buf_size += bytes_count;
                 break;
+            } else if (buf_size != 0) {
+                // Append the data to the buffer, then flush
+                std::size_t bytes_count = buf_cap - buf_size;
+                std::copy_n(data.data(), bytes_count, &buf[buf_size]);
+                bytes_written += bytes_count;
+                buf_size = buf_cap;
+                do_flush();
+                data = data.subspan(bytes_count);
+            } else {
+                // Buffer is empty, skip buffering
+                std::size_t bytes_count = do_write(data.subspan(0, buf_size));
+                bytes_written += bytes_count;
+                data = data.subspan(bytes_count);
             }
         }
         return bytes_written;
@@ -296,18 +292,9 @@ public:
         return write(std::span(data.begin(), data.end()));
     }
 
-    std::size_t write(std::string_view str) {
-        return write(std::span<const std::byte>(reinterpret_cast<const std::byte *>(str.data()), str.size()));
-    }
-
-    std::size_t write(const std::string &str) {
-        return write(std::span(reinterpret_cast<const std::byte *>(str.data()), str.size()));
-    }
-
 private:
     std::unique_ptr<std::byte[]> buf;
-    std::size_t buf_front = 0;
-    std::size_t buf_back = 0;
+    std::size_t buf_size = 0;
     std::size_t buf_cap;
     std::string filename;
     int fd;
@@ -597,11 +584,18 @@ private:
 
 namespace msg {
 
-extern thread_local std::uint64_t last_pid;
-extern thread_local std::uint64_t last_tid;
-extern thread_local bool pid_tid_avail;
-
-void get_pid_tid() noexcept;
+static inline std::array<std::byte, 8> serialize_uint64(std::uint64_t value) noexcept {
+    return {
+        std::byte(value >> 56),
+        std::byte(value >> 48),
+        std::byte(value >> 40),
+        std::byte(value >> 32),
+        std::byte(value >> 24),
+        std::byte(value >> 16),
+        std::byte(value >> 8),
+        std::byte(value)
+    };
+}
 
 class ID final {
 public:
@@ -610,27 +604,13 @@ public:
     }
 
     std::size_t write_to(ht::internal::file::TempFile &file) const {
-        return file.write({
-            std::byte(0xd8),
-            std::byte(0x27),
-            std::byte(0x50),
-            std::byte(tid >> 56),
-            std::byte(tid >> 48),
-            std::byte(tid >> 40),
-            std::byte(tid >> 32),
-            std::byte(tid >> 24),
-            std::byte(tid >> 16),
-            std::byte(tid >> 8),
-            std::byte(tid),
-            std::byte(mid >> 56),
-            std::byte(mid >> 48),
-            std::byte(mid >> 40),
-            std::byte(mid >> 32),
-            std::byte(mid >> 24),
-            std::byte(mid >> 16),
-            std::byte(mid >> 8),
-            std::byte(mid),
-        });
+        std::array<std::byte, 19> buffer;
+        buffer[0] = std::byte(0xd8);
+        buffer[1] = std::byte(0x27);
+        buffer[2] = std::byte(0x50);
+        std::copy_n(serialize_uint64(tid).data(), 8, &buffer[3]);
+        std::copy_n(serialize_uint64(mid).data(), 8, &buffer[11]);
+        return file.write(buffer);
     }
 
     // Thread ID
@@ -673,41 +653,32 @@ public:
         std::uint64_t value;
         std::size_t len;
         std::uint8_t tag;
-        if (this->value <= 24) {
+        if (this->value < 24) {
             value = 0;
             len = 1;
             tag = this->tag | std::uint8_t(this->value);
-        } else if (this->value <= 0x100) {
+        } else if (this->value < 0x100) {
             value = this->value << 56;
-            tag = this->tag | std::uint8_t(0x18);
             len = 2;
-        } else if (this->value <= 0x10000) {
+            tag = this->tag | std::uint8_t(0x18);
+        } else if (this->value < 0x10000) {
             value = this->value << 48;
-            tag = this->tag | std::uint8_t(0x19);
             len = 3;
-        } else if (this->value <= 0x100000000) {
+            tag = this->tag | std::uint8_t(0x19);
+        } else if (this->value < 0x100000000) {
             value = this->value << 32;
-            tag = this->tag | std::uint8_t(0x1a);
             len = 5;
+            tag = this->tag | std::uint8_t(0x1a);
         } else {
             value = this->value;
-            tag = this->tag | std::uint8_t(0x1b);
             len = 9;
+            tag = this->tag | std::uint8_t(0x1b);
         }
 
-        std::array<std::uint64_t, 2> buffer_64;
-        alignas(std::uint64_t) std::byte *buffer = reinterpret_cast<std::byte *>(buffer_64.data());
-        buffer[7] = std::byte(tag);
-        buffer[8] = std::byte(value >> 56);
-        buffer[9] = std::byte(value >> 48);
-        buffer[10] = std::byte(value >> 40);
-        buffer[11] = std::byte(value >> 32);
-        buffer[12] = std::byte(value >> 24);
-        buffer[13] = std::byte(value >> 16);
-        buffer[14] = std::byte(value >> 8);
-        buffer[15] = std::byte(value);
-
-        return file.write(std::span(&buffer[7], len));
+        std::array<std::byte, 9> buffer;
+        buffer[0] = std::byte(tag);
+        std::copy_n(serialize_uint64(value).data(), 8, &buffer[1]);
+        return file.write(std::span<const std::byte>(buffer.data(), len));
     }
 
     std::uint64_t value;
@@ -790,7 +761,7 @@ public:
 
     std::size_t write_to(ht::internal::file::TempFile &file) const {
         std::string_view str = get();
-        return UInt(str.size(), 0x60).write_to(file) + file.write(str);
+        return UInt(str.size(), 0x60).write_to(file) + file.write(std::span(reinterpret_cast<const std::byte *>(str.data()), str.size()));
     }
 
     CowString value;
@@ -1038,7 +1009,8 @@ public:
     std::size_t write_to(ht::internal::file::TempFile &file) const {
         using namespace std::string_view_literals;
 
-        return BeginMap(id).write_to(file) +
+        return file.write({std::byte(0x82), std::byte(0xf6), std::byte(0x81)}) +
+               BeginMap(id).write_to(file) +
                Value(id, String("name"sv), name.as_ref()).write_to(file) +
                Value(id, String("cat"sv), cat.as_ref()).write_to(file) +
                Value(id, String("ph"sv), ph.as_ref()).write_to(file) +
@@ -1054,15 +1026,6 @@ public:
     Timestamp ts;
     UInt pid;
     UInt tid;
-
-private:
-    static std::uint64_t get_pid() noexcept {
-        if (!pid_tid_avail) {
-            get_pid_tid();
-            pid_tid_avail = true;
-        }
-        return last_pid;
-    }
 };
 
 class Message final {
@@ -1130,6 +1093,11 @@ private:
             parent.info = info_future.get();
             timediff = ht::internal::msg::Timestamp(ht::internal::compat::clock_gettime_realtime()) - ht::internal::msg::Timestamp(ht::internal::compat::clock_gettime_monotonic());
         }
+
+        Internal(const Internal &) noexcept = delete;
+        Internal(Internal &&) noexcept = delete;
+        Internal &operator=(const Internal &) noexcept = delete;
+        Internal &operator=(Internal &&) noexcept = delete;
 
         ~Internal() noexcept(false) {
             chan_writer.close();
@@ -1215,6 +1183,11 @@ public:
         ) {
     }
 
+    Tracer(const Tracer &) noexcept = delete;
+    Tracer(Tracer &&) noexcept = delete;
+    Tracer &operator=(const Tracer &) noexcept = delete;
+    Tracer &operator=(Tracer &&) noexcept = delete;
+
     bool is_enabled() const noexcept {
         return internal.has_value();
     }
@@ -1235,7 +1208,7 @@ private:
 class Event final {
 public:
     explicit Event(Tracer &tracer, CowString name, CowString cat, bool duration = false) noexcept :
-        tracer(tracer) {
+        tracer(&tracer) {
         using namespace std::string_view_literals;
         if (!tracer.internal.has_value()) {
             return;
@@ -1253,21 +1226,40 @@ public:
         tracer.internal->chan_writer.write(ht::internal::msg::Message(std::move(begin_event)));
     }
 
+    Event(const Event &) noexcept = delete;
+    Event(Event &&other) noexcept :
+        tracer(other.tracer),
+        end_info(std::move(other.end_info)),
+        id(other.id) {
+        other.end_info.reset();
+        other.id.reset();
+    }
+    Event &operator=(const Event &) noexcept = delete;
+    Event &operator=(Event &&other) noexcept {
+        this->~Event();
+        tracer = other.tracer;
+        end_info = std::move(other.end_info);
+        id = other.id;
+        other.end_info.reset();
+        other.id.reset();
+        return *this;
+    }
+
     ~Event() noexcept {
         using namespace std::string_view_literals;
         if (id.has_value()) {
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*id)));
+            tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*id)));
         }
         if (end_info.has_value()) {
             ht::internal::msg::Event end_event(
                 std::move(end_info->first),
                 std::move(end_info->second),
                 CowString("E"sv),
-                tracer.internal->now()
+                tracer->internal->now()
             );
             auto end_id = end_event.id;
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(std::move(end_event)));
-            tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(end_id)));
+            tracer->internal->chan_writer.write(ht::internal::msg::Message(std::move(end_event)));
+            tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(end_id)));
         }
     };
 
@@ -1275,7 +1267,7 @@ public:
     inline auto set_args(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>())));
 
 public:
-    Tracer &tracer;
+    Tracer *tracer;
 
 private:
     std::optional<std::pair<CowString, CowString>> end_info;
@@ -1289,52 +1281,68 @@ class PayloadArray final {
 
 private:
     PayloadArray(Tracer &tracer) noexcept :
-        tracer(tracer) {
+        tracer(&tracer) {
+    }
+
+    PayloadArray(const PayloadArray &) noexcept = delete;
+    PayloadArray(PayloadArray &&other) noexcept :
+        tracer(other.tracer) {
+        other.tracer = nullptr;
+    }
+    PayloadArray &operator=(const PayloadArray &) noexcept = delete;
+    PayloadArray &operator=(PayloadArray &&other) noexcept {
+        this->~PayloadArray();
+        tracer = other.tracer;
+        other.tracer = nullptr;
+        return *this;
     }
 
     ~PayloadArray() noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(id)));
+        if (tracer == nullptr) {
+            return;
+        }
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(id)));
     }
 
 public:
     void push(std::nullptr_t) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Null())));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Null())));
     }
     void push(bool value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Bool(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Bool(value))));
     }
     void push(std::uint64_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
     }
     void push(std::uint32_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
     }
     void push(std::uint16_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
     }
     void push(std::uint8_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::UInt(value))));
     }
     void push(std::int64_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
     }
     void push(std::int32_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
     }
     void push(std::int16_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
     }
     void push(std::int8_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Int(value))));
     }
     void push(float value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Float32(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Float32(value))));
     }
     void push(double value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Float64(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::Float64(value))));
     }
     void push(CowString &&value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, std::move(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, std::move(value))));
     }
 
     template <std::invocable<PayloadArray &> F>
@@ -1344,7 +1352,7 @@ public:
     inline auto push_map(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>())));
 
 public:
-    Tracer &tracer;
+    Tracer *tracer;
     ht::internal::msg::ID id;
 };
 
@@ -1354,52 +1362,65 @@ class PayloadMap final {
 
 private:
     PayloadMap(Tracer &tracer) noexcept :
-        tracer(tracer) {
+        tracer(&tracer) {
+    }
+
+    PayloadMap(const PayloadMap &) noexcept = delete;
+    PayloadMap(PayloadMap &&other) noexcept :
+        tracer(other.tracer) {
+        other.tracer = nullptr;
+    }
+    PayloadMap &operator=(const PayloadMap &) noexcept = delete;
+    PayloadMap &operator=(PayloadMap &&other) noexcept {
+        this->~PayloadMap();
+        tracer = other.tracer;
+        other.tracer = nullptr;
+        return *this;
     }
 
     ~PayloadMap() noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(id)));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(id)));
     }
 
 public:
     void push(CowString &&key, std::nullptr_t) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Null())));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Null())));
     }
     void push(CowString &&key, bool value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Bool(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Bool(value))));
     }
     void push(CowString &&key, std::uint64_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
     }
     void push(CowString &&key, std::uint32_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
     }
     void push(CowString &&key, std::uint16_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
     }
     void push(CowString &&key, std::uint8_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::UInt(value))));
     }
     void push(CowString &&key, std::int64_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
     }
     void push(CowString &&key, std::int32_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
     }
     void push(CowString &&key, std::int16_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
     }
     void push(CowString &&key, std::int8_t value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Int(value))));
     }
     void push(CowString &&key, float value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Float32(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Float32(value))));
     }
     void push(CowString &&key, double value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Float64(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::Float64(value))));
     }
     void push(CowString &&key, CowString &&value) noexcept {
-        tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), std::move(value))));
+        tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), std::move(value))));
     }
 
     template <std::invocable<PayloadArray &> F>
@@ -1409,54 +1430,54 @@ public:
     inline auto push_map(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>())));
 
 public:
-    Tracer &tracer;
+    Tracer *tracer;
     ht::internal::msg::ID id;
 };
 
 template <std::invocable<PayloadMap &> F>
 inline auto Event::set_args(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
     using namespace std::string_view_literals;
-    if (!tracer.internal.has_value()) {
+    if (!tracer->internal.has_value()) {
         return;
     }
-    PayloadMap child(tracer);
-    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, CowString("args"sv), ht::internal::msg::BeginMap(child.id))));
+    PayloadMap child(*tracer);
+    tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(*id, CowString("args"sv), ht::internal::msg::BeginMap(child.id))));
     struct ScopeGuard {
         ~ScopeGuard() noexcept {
-            self.tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*self.id)));
+            self.tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::EndValue(*self.id)));
             self.id.reset();
         }
         Event &self;
     } _scope_guard = {*this};
-    return f(std::ref(child));
+    return std::forward<F>(f)(child);
 }
 
 template <std::invocable<PayloadArray &> F>
 inline auto PayloadArray::push_array(F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>()))) {
-    PayloadArray child(tracer);
-    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::BeginArray(child.id))));
-    return f(std::ref(child));
+    PayloadArray child(*tracer);
+    tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::BeginArray(child.id))));
+    return std::forward<F>(f)(child);
 }
 
 template <std::invocable<PayloadMap &> F>
 inline auto PayloadArray::push_map(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
-    PayloadMap child(tracer);
-    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::BeginMap(child.id))));
-    return f(std::ref(child));
+    PayloadMap child(*tracer);
+    tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::nullopt, ht::internal::msg::BeginMap(child.id))));
+    return std::forward<F>(f)(std::ref<PayloadMap>(child));
 }
 
 template <std::invocable<PayloadArray &> F>
 inline auto PayloadMap::push_array(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>()))) {
-    PayloadArray child(tracer);
-    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::BeginArray(child.id))));
-    return f(std::ref(child));
+    PayloadArray child(*tracer);
+    tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::BeginArray(child.id))));
+    return std::forward<F>(f)(child);
 }
 
 template <std::invocable<PayloadMap &> F>
 inline auto PayloadMap::push_map(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
-    PayloadMap child(tracer);
-    tracer.internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::BeginMap(child.id))));
-    return f(std::ref(child));
+    PayloadMap child(*tracer);
+    tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::BeginMap(child.id))));
+    return std::forward<F>(f)(child);
 }
 
 } // namespace ht

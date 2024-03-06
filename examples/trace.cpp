@@ -23,7 +23,7 @@ struct ThreadParams {
 
 static void thread_start(ThreadParams &params) noexcept;
 
-int main(void) {
+int main() {
     ht::Tracer tracer(true, "trace"sv);
     if (tracer.is_enabled()) {
         std::clog << "Writing to: "sv << tracer.get_filename() << ", will take 10 seconds"sv << std::endl;
@@ -34,7 +34,7 @@ int main(void) {
     auto start = std::chrono::high_resolution_clock::now();
     auto end = start + std::chrono::seconds(10);
 
-    constexpr std::size_t num_threads = 16;
+    constexpr std::size_t num_threads = 8;
 
     std::array<ThreadParams, num_threads> params;
     for (std::size_t i = 0; i < num_threads; i++) {
@@ -74,13 +74,14 @@ static void thread_start(ThreadParams &params) noexcept {
         std::this_thread::sleep_for(std::chrono::nanoseconds(sleep_nsec));
 
         for (std::uint64_t trace_id = 0; trace_id < params.trace_per_batch; trace_id++) {
-            ht::Event(*params.tracer, "trace"sv, "func,trace"sv, false).set_args([batch_id, trace_id](ht::PayloadMap &payload) {
-                payload.push("batch_id"sv, batch_id);
-                payload.push_array("trace_id"sv, [batch_id, trace_id](ht::PayloadArray &payload) {
-                    payload.push(batch_id);
-                    payload.push(trace_id);
+            ht::Event(*params.tracer, "trace"sv, "func,trace"sv, false)
+                .set_args([batch_id, trace_id](ht::PayloadMap &payload) {
+                    payload.push("batch_id"sv, batch_id);
+                    payload.push_array("trace_id"sv, [batch_id, trace_id](ht::PayloadArray &payload) {
+                        payload.push(batch_id);
+                        payload.push(trace_id);
+                    });
                 });
-            });
         }
     }
 }
