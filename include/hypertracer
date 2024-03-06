@@ -1083,7 +1083,7 @@ private:
 
     class Internal final {
     public:
-        explicit Internal(Tracer &parent, std::string_view prefix, std::string_view suffix) :
+        explicit Internal(Tracer &parent, std::string_view default_prefix, std::string_view default_suffix) :
             chan_reader(ht::internal::div_ceil(
                 ht::internal::parse_env("HYPERTRACER_THREAD_BUFFER", std::size_t(std::thread::hardware_concurrency() * 1048576)),
                 ht::internal::mpsc::Reader<ht::internal::msg::Message>::SlotSize
@@ -1096,8 +1096,8 @@ private:
             thread = std::thread(
                 &Internal::thread_main,
                 this,
-                ht::internal::parse_env("HYPERTRACER_OUTPUT", prefix),
-                suffix,
+                ht::internal::parse_env("HYPERTRACER_OUTPUT", default_prefix),
+                ht::internal::parse_env("HYPERTRACER_OUTPUT_SUFFIX", default_suffix),
                 ht::internal::parse_env("HYPERTRACER_FILE_BUFFER", std::size_t(4096)),
                 std::move(info_promise),
                 std::move(error_promise)
@@ -1187,10 +1187,10 @@ private:
     };
 
 public:
-    Tracer(bool enable, std::string_view prefix, std::string_view suffix = std::string_view(".trace", 6)) :
+    Tracer(bool default_enable, std::string_view default_prefix, std::string_view default_suffix = std::string_view(".trace", 6)) :
         internal(
-            ht::internal::parse_env("HYPERTRACER_ENABLED", enable) ?
-                std::optional<Internal>(std::in_place, *this, prefix, suffix) :
+            ht::internal::parse_env("HYPERTRACER_ENABLED", default_enable) ?
+                std::optional<Internal>(std::in_place, *this, default_prefix, default_suffix) :
                 std::nullopt
         ) {
     }
