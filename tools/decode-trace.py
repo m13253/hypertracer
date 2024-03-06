@@ -17,9 +17,14 @@ def convert(file_in: BinaryIO, file_out: TextIO) -> None:
             return child
         return value
 
+    if file_in.read(1) != b'\x9f':
+        raise ValueError('invalid file format')
     file_out.write('[')
     line_no = 0
-    for entry in cbor2.load(file_in):
+    while True:
+        entry = cbor2.load(file_in)
+        if entry == cbor2.break_marker:
+            break;
         entry = list(entry)
         if len(entry) == 1:
             value_id = entry[0]
@@ -49,6 +54,10 @@ def convert(file_in: BinaryIO, file_out: TextIO) -> None:
                         parent[key] = value
                     else:
                         raise TypeError(f'invalid conainer type, expect dict, got {type(parent)}')
+    if len(root) != 0:
+        raise ValueError('file not closed properly')
+    if len(cache) != 1:
+        raise ValueError('file not closed properly')
     file_out.write(']\n')
 
 

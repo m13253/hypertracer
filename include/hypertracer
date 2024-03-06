@@ -101,6 +101,12 @@ private:
 
 namespace internal {
 
+static inline constexpr std::size_t div_ceil(std::size_t a, std::size_t b) noexcept {
+    std::size_t quo = a / b;
+    std::size_t rem = a % b;
+    return quo + (rem != 0);
+}
+
 [[noreturn]] static inline void panic(std::string_view message) noexcept {
     std::fwrite(message.data(), 1, message.size(), stderr);
     std::terminate();
@@ -329,6 +335,8 @@ private:
     };
 
 public:
+    static constexpr std::size_t SlotSize = sizeof(Slot);
+
     explicit Reader(std::size_t cap) noexcept :
         buffer(std::make_unique<Slot[]>(cap)),
         cap(cap) {
@@ -1076,7 +1084,10 @@ private:
     class Internal final {
     public:
         explicit Internal(Tracer &parent, std::string_view prefix, std::string_view suffix) :
-            chan_reader(ht::internal::parse_env("HYPERTRACER_THREAD_BUFFER", std::max<std::size_t>(std::thread::hardware_concurrency() * 128, 64))),
+            chan_reader(ht::internal::div_ceil(
+                ht::internal::parse_env("HYPERTRACER_THREAD_BUFFER", std::size_t(std::thread::hardware_concurrency() * 1048576)),
+                ht::internal::mpsc::Reader<ht::internal::msg::Message>::SlotSize
+            )),
             chan_writer(chan_reader.new_writer()) {
             std::promise<FileInfo> info_promise;
             auto info_future = info_promise.get_future();

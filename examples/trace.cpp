@@ -24,6 +24,7 @@ struct ThreadParams {
 };
 
 static void thread_start(ThreadParams &params) noexcept;
+static void controlled_sleep(std::chrono::high_resolution_clock::time_point &last_wake, const std::chrono::high_resolution_clock::duration &duration) noexcept;
 
 int main() {
     ht::Tracer tracer(true, "trace"sv);
@@ -59,24 +60,12 @@ int main() {
 static void thread_start(ThreadParams &params) noexcept {
     ht::Event ev(*params.tracer, "thread_start"sv, "func"sv, ht::EventType::Duration);
 
-    auto interval_nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(params.interval).count();
-    if (interval_nsec < 0) {
-        std::terminate();
-    }
-
+    auto last_wake = params.start;
     for (std::uint64_t batch_id = 0;; batch_id++) {
-
-        auto now = std::chrono::high_resolution_clock::now();
-        if (now >= params.end) {
-            break;
+        controlled_sleep(last_wake, params.interval);
+        if (last_wake >= params.end) {
+            return;
         }
-
-        auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(now - params.start).count();
-        if (diff <= 0) {
-            break;
-        }
-        auto sleep_nsec = interval_nsec - (diff % interval_nsec);
-        std::this_thread::sleep_for(std::chrono::nanoseconds(sleep_nsec));
 
         ht::Event ev(*params.tracer, "batch"sv, "func,trace"sv, ht::EventType::Duration);
         ev.set_args([batch_id](ht::PayloadMap &payload) {
@@ -84,6 +73,13 @@ static void thread_start(ThreadParams &params) noexcept {
         });
 
         for (std::uint64_t trace_id = 0; trace_id < params.trace_per_batch; trace_id++) {
+            if (trace_id != 0) {
+                controlled_sleep(last_wake, params.interval);
+                if (last_wake >= params.end) {
+                    return;
+                }
+            }
+
             ht::Event(*params.tracer, "trace"sv, "func,trace"sv, ht::EventType::Instant)
                 .set_args([batch_id, trace_id](ht::PayloadMap &payload) {
                     payload.push("batch_id"sv, batch_id);
@@ -99,5 +95,17 @@ static void thread_start(ThreadParams &params) noexcept {
                     payload.push("counter"sv, counter);
                 });
         }
+    }
+}
+
+static void controlled_sleep(std::chrono::high_resolution_clock::time_point &last_wake, const std::chrono::high_resolution_clock::duration &duration) noexcept {
+    auto next_wake = last_wake + duration;
+    auto now = std::chrono::high_resolution_clock::now();
+    auto diff = next_wake - now;
+    if (diff > diff.zero()) {
+        std::this_thread::sleep_for(diff);
+        last_wake = next_wake;
+    } else {
+        last_wake = now;
     }
 }
