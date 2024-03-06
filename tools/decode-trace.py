@@ -18,14 +18,16 @@ def convert(file_in: BinaryIO, file_out: TextIO) -> None:
         return value
 
     file_out.write('[')
-    for i, entry in enumerate(cbor2.load(file_in)):
+    line_no = 0
+    for entry in cbor2.load(file_in):
         entry = list(entry)
         if len(entry) == 1:
             value_id = entry[0]
             value = cache[value_id]
             if id(value) in root:
                 root.remove(id(value))
-                file_out.write(',\n  ' if i != 0 else '\n  ')
+                file_out.write(',\n    ' if line_no != 0 else '\n    ')
+                line_no += 1
                 custom_json_serializer(value, file_out)
             del cache[value_id]
         else:
@@ -47,7 +49,7 @@ def convert(file_in: BinaryIO, file_out: TextIO) -> None:
                         parent[key] = value
                     else:
                         raise TypeError(f'invalid conainer type, expect dict, got {type(parent)}')
-    file_out.write('\n]\n')
+    file_out.write(']\n')
 
 
 def custom_json_serializer(obj: Any, file_out: TextIO) -> None:
@@ -80,9 +82,9 @@ def custom_json_serializer(obj: Any, file_out: TextIO) -> None:
             file_out.write('}')
         elif isinstance(obj, cbor2.CBORTag) and obj.tag == 1001 and isinstance(obj.value, dict) and len(obj.value) == 2 and 1 in obj.value and -9 in obj.value:
             sec, nsec = obj.value[1], obj.value[-9]
-            msec = sec * 1000 + nsec // 1000000
-            frac = nsec % 1000000
-            file_out.write(f'{msec}.{frac:06}')
+            msec = sec * 1000000 + nsec // 1000
+            frac = nsec % 1000
+            file_out.write(f'{msec}.{frac:03}')
         else:
             json.dump(obj, file_out, ensure_ascii=False, check_circular=False)
 
