@@ -1249,7 +1249,7 @@ public:
     explicit constexpr Event() noexcept = default;
 
     explicit Event(Tracer &tracer, CowString &&name, CowString &&categories, EventType &&event_type = EventType::Instant) noexcept {
-        do_reset(tracer, std::move(name), std::move(categories), std::move(event_type));
+        do_emplace(tracer, std::move(name), std::move(categories), std::move(event_type));
     }
 
     Event(const Event &) noexcept = delete;
@@ -1282,13 +1282,13 @@ public:
         return *this;
     }
 
-    Event &reset(Tracer &tracer, CowString &&name, CowString &&categories, EventType &&event_type = EventType::Instant) noexcept {
+    Event &emplace(Tracer &tracer, CowString &&name, CowString &&categories, EventType &&event_type = EventType::Instant) noexcept {
         reset();
-        return do_reset(tracer, std::move(name), std::move(categories), std::move(event_type));
+        return do_emplace(tracer, std::move(name), std::move(categories), std::move(event_type));
     }
 
 private:
-    Event &do_reset(Tracer &tracer, CowString &&name, CowString &&categories, EventType &&event_type) noexcept {
+    Event &do_emplace(Tracer &tracer, CowString &&name, CowString &&categories, EventType &&event_type) noexcept {
         this->tracer = &tracer;
         if (!tracer.internal.has_value()) {
             return *this;
