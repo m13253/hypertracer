@@ -24,7 +24,13 @@ def convert(file_in: BinaryIO, file_out: TextIO) -> None:
     while True:
         entry = cbor2.load(file_in)
         if entry == cbor2.break_marker:
-            break;
+            next_file_start = file_in.read(1)
+            if len(next_file_start) == 0:
+                break
+            elif next_file_start == b'\x9f':
+                continue
+            else:
+                raise ValueError('extra data at file end')
         entry = list(entry)
         if len(entry) == 1:
             value_id = entry[0]
@@ -146,7 +152,7 @@ def main(argv: list[str]) -> None:
         with open(name_in, 'rb') as file_in:
             return convert(file_in, sys.stdout)
 
-    
+
 def print_help(program_name: str) -> None:
     print(f'Usage {program_name} INPUT.trace [-o OUTPUT.trace]')
     print()
