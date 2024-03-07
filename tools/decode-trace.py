@@ -64,7 +64,7 @@ def convert(file_in: BinaryIO, file_out: TextIO) -> None:
         raise ValueError('file not closed properly')
     if len(cache) != 1:
         raise ValueError('file not closed properly')
-    file_out.write(']\n')
+    file_out.write('\n]\n')
 
 
 def custom_json_serializer(obj: Any, file_out: TextIO) -> None:
