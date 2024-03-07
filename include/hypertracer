@@ -118,6 +118,7 @@ static inline void warning(std::string_view message) noexcept {
 
 static inline bool parse_env(const char *name, bool default_value) noexcept {
     using namespace std::string_view_literals;
+
     const char *env = std::getenv(name);
     if (env == nullptr || env[0] == '\0') {
         return default_value;
@@ -136,6 +137,7 @@ static inline bool parse_env(const char *name, bool default_value) noexcept {
 
 static inline std::size_t parse_env(const char *name, std::size_t default_value) noexcept {
     using namespace std::string_view_literals;
+
     const char *env = std::getenv(name);
     if (env == nullptr || env[0] == '\0') {
         return default_value;
@@ -154,7 +156,6 @@ static inline std::size_t parse_env(const char *name, std::size_t default_value)
 }
 
 static inline std::string_view parse_env(const char *name, std::string_view default_value) noexcept {
-    using namespace std::string_view_literals;
     const char *env = std::getenv(name);
     if (env == nullptr || env[0] == '\0') {
         return default_value;
@@ -345,6 +346,7 @@ public:
 
     ~Reader() noexcept {
         using namespace std::string_view_literals;
+
         std::size_t writer_count = this->writer_count.load(std::memory_order::acquire);
         if (writer_count != 0) {
             ht::internal::panic("panic: ht::internal::mpsc::Reader::~Reader: channel not closed properly\n"sv);
@@ -362,6 +364,7 @@ public:
 private:
     std::pair<Slot &, SlotStatus> before_read() noexcept {
         using namespace std::string_view_literals;
+
         Slot &slot = buffer[front];
         SlotStatus status;
         {
@@ -369,7 +372,7 @@ private:
             // Tell the writing thread we may need a wake-up
             bool is_reading_false = false;
             if (!is_reading.compare_exchange_strong(is_reading_false, true, std::memory_order::relaxed, std::memory_order::relaxed)) {
-                ht::internal::panic("panic: ht::internal::mpsc::Reader::before_read: more than one threads are reading\n");
+                ht::internal::panic("panic: ht::internal::mpsc::Reader::before_read: more than one threads are reading\n"sv);
             }
             status = SlotStatus(slot.status.load(std::memory_order::acquire));
             // Test if the front element is ready.
@@ -573,6 +576,7 @@ public:
 private:
     static void after_write(Reader<T> &r, Slot &slot, SlotStatus status) noexcept {
         using namespace std::string_view_literals;
+
         // Set the status
         auto status_empty = std::underlying_type_t<SlotStatus>(SlotStatus::Empty);
         if (!slot.status.compare_exchange_strong(status_empty, std::underlying_type_t<SlotStatus>(status), std::memory_order::release, std::memory_order::relaxed)) {
@@ -1120,6 +1124,7 @@ private:
     private:
         void thread_main(std::string_view prefix, std::string_view suffix, std::size_t buffer_size, std::promise<FileInfo> info, std::promise<void> error) noexcept {
             using namespace std::string_view_literals;
+
             ht::internal::compat::pthread_setname_self_noexcept("hypertracer");
 
             std::optional<ht::internal::file::TempFile> file;
@@ -1504,6 +1509,7 @@ public:
 template <std::invocable<PayloadMap &> F>
 inline auto Event::set_args(F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
     using namespace std::string_view_literals;
+
     if (!tracer->internal.has_value()) {
         return;
     }
