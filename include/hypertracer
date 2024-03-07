@@ -1496,10 +1496,10 @@ public:
     }
 
     template <std::invocable<PayloadArray &> F>
-    inline auto push_array(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>())));
+    inline auto push_array(CowString &&key, F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>())));
 
     template <std::invocable<PayloadMap &> F>
-    inline auto push_map(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>())));
+    inline auto push_map(CowString &&key, F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>())));
 
 public:
     Tracer *tracer;
@@ -1540,14 +1540,14 @@ inline auto PayloadArray::push_map(F &&f) noexcept(noexcept(f(std::declval<Paylo
 }
 
 template <std::invocable<PayloadArray &> F>
-inline auto PayloadMap::push_array(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>()))) {
+inline auto PayloadMap::push_array(CowString &&key, F &&f) noexcept(noexcept(f(std::declval<PayloadArray &>()))) {
     PayloadArray child(*tracer);
     tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::BeginArray(child.id))));
     return std::forward<F>(f)(child);
 }
 
 template <std::invocable<PayloadMap &> F>
-inline auto PayloadMap::push_map(CowString key, F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
+inline auto PayloadMap::push_map(CowString &&key, F &&f) noexcept(noexcept(f(std::declval<PayloadMap &>()))) {
     PayloadMap child(*tracer);
     tracer->internal->chan_writer.write(ht::internal::msg::Message(ht::internal::msg::Value(id, std::move(key), ht::internal::msg::BeginMap(child.id))));
     return std::forward<F>(f)(child);
