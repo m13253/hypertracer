@@ -4,10 +4,10 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <functional>
 #include <hypertracer>
 #include <iostream>
+#include <ratio>
 #include <string_view>
 #include <thread>
 
