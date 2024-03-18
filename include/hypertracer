@@ -173,6 +173,7 @@ std::uint64_t getpid() noexcept;
 std::uint64_t gettid() noexcept;
 std::tm gmtime(const std::time_t *timep);
 int mkostemps_cloexec(char *path, int slen);
+void pthread_setaffinity_self_all();
 void pthread_setname_self_noexcept(const char *name) noexcept;
 std::size_t strftime(char *__restrict__ s, std::size_t max, const char *__restrict__ format, const std::tm *tm) noexcept;
 std::time_t time(std::time_t *tloc);
@@ -1125,6 +1126,7 @@ private:
         void thread_main(std::string_view prefix, std::string_view suffix, std::size_t buffer_size, std::promise<FileInfo> info, std::promise<void> error) noexcept {
             using namespace std::string_view_literals;
 
+            ht::internal::compat::pthread_setaffinity_self_all();
             ht::internal::compat::pthread_setname_self_noexcept("hypertracer");
 
             std::optional<ht::internal::file::TempFile> file;

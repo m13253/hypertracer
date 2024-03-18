@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 #endif
 #include <cerrno>
+#include <cstddef>
 #include <ctime>
 #include <fcntl.h>
 #include <pthread.h>
@@ -10,6 +11,10 @@
 #include <system_error>
 #include <time.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <algorithm>
+#include <sched.h>
+#endif
 
 namespace ht {
 namespace internal {
@@ -83,6 +88,17 @@ int mkostemps_cloexec(char *path, int slen) {
         throw std::system_error(errno, std::generic_category(), "mkostemps");
     }
     return fd;
+}
+
+void pthread_setaffinity_self_all() {
+#ifdef __linux__
+    cpu_set_t cpuset;
+    std::fill_n(reinterpret_cast<std::byte *>(&cpuset), sizeof cpuset, ~std::byte(0));
+    int result = ::pthread_setaffinity_np(::pthread_self(), sizeof cpuset, &cpuset);
+    if (result != 0) {
+        throw std::system_error(result, std::generic_category(), "pthread_setaffinity_np");
+    }
+#endif
 }
 
 void pthread_setname_self_noexcept(const char *name) noexcept {
