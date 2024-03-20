@@ -13,7 +13,9 @@
 #include <unistd.h>
 #ifdef __linux__
 #include <algorithm>
+#include <atomic>
 #include <sched.h>
+#include <sys/sysinfo.h>
 #endif
 
 namespace ht {
@@ -92,9 +94,18 @@ int mkostemps_cloexec(char *path, int slen) {
 
 void pthread_setaffinity_self_all() {
 #ifdef __linux__
-    cpu_set_t cpuset;
-    std::fill_n(reinterpret_cast<std::byte *>(&cpuset), sizeof cpuset, ~std::byte(0));
-    int result = ::pthread_setaffinity_np(::pthread_self(), sizeof cpuset, &cpuset);
+    static std::atomic_int num_cpus_cached = 0;
+    int num_cpus = num_cpus_cached.load(std::memory_order::relaxed);
+    if (num_cpus == 0) {
+        // This API reads /sys/devices/system/cpu/possible
+        num_cpus = ::get_nprocs_conf();
+        num_cpus_cached.store(num_cpus, std::memory_order::relaxed);
+    }
+    std::size_t cpu_set_size = CPU_ALLOC_SIZE(num_cpus);
+    cpu_set_t *cpu_set = CPU_ALLOC(num_cpus);
+    std::fill_n(reinterpret_cast<std::byte *>(cpu_set), cpu_set_size, ~std::byte(0));
+    int result = ::pthread_setaffinity_np(::pthread_self(), cpu_set_size, cpu_set);
+    CPU_FREE(cpu_set);
     if (result != 0) {
         throw std::system_error(result, std::generic_category(), "pthread_setaffinity_np");
     }
