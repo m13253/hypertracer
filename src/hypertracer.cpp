@@ -16,6 +16,7 @@
 #include <atomic>
 #include <sched.h>
 #include <sys/sysinfo.h>
+#include <sys/types.h> // glibc < 2.30 didn't have gettid() in unistd.h
 #endif
 
 namespace ht {
