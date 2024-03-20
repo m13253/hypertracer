@@ -16,7 +16,9 @@
 #include <atomic>
 #include <sched.h>
 #include <sys/sysinfo.h>
-#include <sys/types.h> // glibc < 2.30 didn't have gettid() in unistd.h
+#if __GLIBC__ < 2 || __GLIBC__ == 2 && __GLIBC_MINOR__ < 30
+#include <sys/syscall.h> // glibc < 2.30 didn't have gettid() in unistd.h
+#endif
 #endif
 
 namespace ht {
@@ -66,7 +68,11 @@ std::uint64_t gettid() noexcept {
     if (!tid_avail) {
         tid_avail = true;
 #ifdef __linux__
+#if __GLIBC__ < 2 || __GLIBC__ == 2 && __GLIBC_MINOR__ < 30
+        tid = std::uint64_t(::syscall(SYS_gettid)); // glibc < 2.30 didn't have gettid() in unistd.h
+#else
         tid = std::uint64_t(::gettid());
+#endif
 #elif defined(__APPLE__)
         ::pthread_threadid_np(nullptr, &tid);
 #else
