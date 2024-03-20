@@ -20,6 +20,7 @@ install_headers(
 lib = static_library('hypertracer', sources,
   install : true,
   include_directories : include_directories('include'),
+  dependencies : dependency('threads'),
   gnu_symbol_visibility : 'hidden',
 )
 hypertracer_dep = declare_dependency(
