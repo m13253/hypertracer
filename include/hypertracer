@@ -1247,6 +1247,7 @@ public:
     static constexpr std::tuple<std::string_view, std::optional<std::string_view>, const EventType *> Sample = {std::string_view("P", 1), std::nullopt, nullptr};
     static constexpr std::tuple<std::string_view, std::optional<std::string_view>, const EventType *> Object = {std::string_view("N", 1), std::string_view("D", 1), nullptr};
     static constexpr std::tuple<std::string_view, std::optional<std::string_view>, const EventType *> ObjectSnapshot = {std::string_view("O", 1), std::nullopt, nullptr};
+    static constexpr std::tuple<std::string_view, std::optional<std::string_view>, const EventType *> Metadata = {std::string_view("M", 1), std::nullopt, nullptr};
     static constexpr std::tuple<std::string_view, std::optional<std::string_view>, const EventType *> Mark = {std::string_view("R", 1), std::nullopt, nullptr};
     static constexpr std::tuple<std::string_view, std::optional<std::string_view>, const EventType *> ClockSync = {std::string_view("c", 1), std::nullopt, nullptr};
 };
