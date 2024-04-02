@@ -406,7 +406,7 @@ public:
                 // https://stackoverflow.com/q/37552866/2557927
                 TSAN_ANNOTATE_IGNORE_WRITES_BEGIN();
                 result.emplace(std::move(*msg));
-                msg->~T();
+                std::destroy_at(msg);
                 TSAN_ANNOTATE_IGNORE_WRITES_END();
                 break;
             }
@@ -559,7 +559,7 @@ public:
         // Am I doing wrong? Or is it a limitation of TSan?
         // https://stackoverflow.com/q/37552866/2557927
         TSAN_ANNOTATE_IGNORE_WRITES_BEGIN();
-        new (slot.msg.data()) T(std::move(msg));
+        std::construct_at(reinterpret_cast<T *>(slot.msg.data()), std::move(msg));
         TSAN_ANNOTATE_IGNORE_WRITES_END();
         after_write(r, slot, SlotStatus::Value);
     }
