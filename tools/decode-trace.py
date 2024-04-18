@@ -7,6 +7,7 @@ from typing import Any, BinaryIO, Dict, TextIO, Optional
 
 
 def convert(file_in: BinaryIO, file_out: TextIO) -> None:
+    break_marker = cbor2.loads(b'\xff')
     root = set()
     cache: Dict[Optional['cbor2.CBORTag'], Any] = {None: root}
 
@@ -23,7 +24,7 @@ def convert(file_in: BinaryIO, file_out: TextIO) -> None:
     line_no = 0
     while True:
         entry = cbor2.load(file_in)
-        if entry == cbor2.break_marker:
+        if entry == break_marker:
             next_file_start = file_in.read(1)
             if len(next_file_start) == 0:
                 break
