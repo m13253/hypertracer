@@ -1129,7 +1129,7 @@ private:
             ht::internal::compat::pthread_setaffinity_self_all();
             ht::internal::compat::pthread_setname_self_noexcept("hypertracer");
 
-            std::optional<ht::internal::file::TempFile> file;
+            thread_local std::optional<ht::internal::file::TempFile> file;
             try {
                 file.emplace(prefix, suffix, buffer_size);
             } catch (...) {
