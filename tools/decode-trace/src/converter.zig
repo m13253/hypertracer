@@ -34,7 +34,10 @@ pub fn convert(allocator: std.mem.Allocator, filename_in: []const []const u8, fi
         defer _ = parser_arena.deinit();
         var parser = cborlite.Parser(@TypeOf(fin_buf).Reader).init(parser_arena.allocator(), fin_buf.reader());
 
-        while (try parser.nextValue()) |value| {
+        while (parser.nextValue() catch |err| {
+            std.debug.print("Error: File {s} at position 0x{x}: {s}\n", .{ i, parser.bytesRead(), @errorName(err) });
+            continue;
+        }) |value| {
             defer _ = parser_arena.reset(.retain_capacity);
             //defer value.deinit(parser_arena.allocator());
 
