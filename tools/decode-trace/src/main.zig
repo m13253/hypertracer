@@ -1,7 +1,7 @@
 const std = @import("std");
 const argparser = @import("argparser.zig");
-const converter = @import("converter.zig");
 const cborlite = @import("cborlite.zig");
+const converter = @import("converter.zig");
 
 pub const std_options = std.Options{
     .fmt_max_depth = std.math.maxInt(usize),
