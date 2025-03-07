@@ -53,14 +53,14 @@ def convert(file_in: BinaryIO, file_out: TextIO) -> None:
                     elif isinstance(parent, set):
                         parent.add(id(value))
                     else:
-                        raise TypeError(f'invalid conainer type, expect list, got {type(parent)}')
+                        raise TypeError(f'invalid container type, expect list, got {type(parent)}')
             elif isinstance(container, dict):
                 for key, value in container.items():
                     value = process_value(value)
                     if isinstance(parent, dict):
                         parent[key] = value
                     else:
-                        raise TypeError(f'invalid conainer type, expect dict, got {type(parent)}')
+                        raise TypeError(f'invalid container type, expect dict, got {type(parent)}')
     if len(root) != 0:
         raise ValueError('file not closed properly')
     if len(cache) != 1:
