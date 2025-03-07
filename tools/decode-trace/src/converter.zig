@@ -34,42 +34,55 @@ pub fn convert(allocator: std.mem.Allocator, filename_in: []const []const u8, fi
         defer _ = parser_arena.deinit();
         var parser = cborlite.Parser(@TypeOf(fin_buf).Reader).init(parser_arena.allocator(), fin_buf.reader());
 
-        while (parser.nextValue() catch |err| {
-            std.debug.print("Error: File {s} at position 0x{x}: {s}\n", .{ i, parser.bytesRead(), @errorName(err) });
-            continue;
-        }) |value| {
-            defer _ = parser_arena.reset(.retain_capacity);
-            //defer value.deinit(parser_arena.allocator());
+        blk: {
+            while (parser.nextValue() catch |err| {
+                std.debug.print("Error: File {s} at position 0x{x}: {s}\n", .{ i, parser.bytesRead(), @errorName(err) });
+                break :blk;
+            }) |value| {
+                defer _ = parser_arena.reset(.retain_capacity);
+                //defer value.deinit(parser_arena.allocator());
 
-            if (fout_buf == null) {
-                if (filename_out == null or std.mem.eql(u8, filename_out.?, "-")) {
-                    fout = std.io.getStdOut();
-                    fout_need_close = false;
-                } else {
-                    fout = try std.fs.cwd().createFile(filename_out.?, .{});
-                    fout_need_close = true;
-                }
-                fout_buf = std.io.bufferedWriter(fout.writer());
-                try fout_buf.?.writer().writeByte('[');
-                json_writer = jsonlite.Writer(@TypeOf(fout_buf.?.writer())).init(fout_buf.?.writer());
-            }
-
-            switch (value) {
-                .stream_array_start, .break_mark => continue,
-                else => {
-                    const json_out = try objcache.processRecord(value);
-                    if (json_out) |json_out_| {
-                        defer json_out_.deinit(allocator);
-                        if (comma) {
-                            try fout_buf.?.writer().writeAll(",\n");
-                        } else {
-                            try fout_buf.?.writer().writeByte('\n');
-                        }
-                        comma = true;
-                        try json_writer.write(json_out_);
+                if (fout_buf == null) {
+                    if (filename_out == null or std.mem.eql(u8, filename_out.?, "-")) {
+                        fout = std.io.getStdOut();
+                        fout_need_close = false;
+                    } else {
+                        fout = try std.fs.cwd().createFile(filename_out.?, .{});
+                        fout_need_close = true;
                     }
-                },
+                    fout_buf = std.io.bufferedWriter(fout.writer());
+                    try fout_buf.?.writer().writeByte('[');
+                    json_writer = jsonlite.Writer(@TypeOf(fout_buf.?.writer())).init(fout_buf.?.writer());
+                }
+
+                switch (value) {
+                    .stream_array_start, .break_mark => continue,
+                    else => {
+                        const json_out = try objcache.processRecord(value);
+                        if (json_out) |json_out_| {
+                            defer json_out_.deinit(allocator);
+                            if (comma) {
+                                try fout_buf.?.writer().writeAll(",\n");
+                            } else {
+                                try fout_buf.?.writer().writeByte('\n');
+                            }
+                            comma = true;
+                            try json_writer.write(json_out_);
+                        }
+                    },
+                }
             }
+        }
+
+        while (objcache.popRemaining()) |json_out| {
+            defer json_out.deinit(allocator);
+            if (comma) {
+                try fout_buf.?.writer().writeAll(",\n");
+            } else {
+                try fout_buf.?.writer().writeByte('\n');
+            }
+            comma = true;
+            try json_writer.write(json_out);
         }
     }
     if (fout_buf) |*f| {
