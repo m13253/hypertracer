@@ -19,9 +19,7 @@ pub fn main() !u8 {
             return 1;
         }
         return err;
-    } orelse {
-        return 0;
-    };
+    } orelse return 0;
     defer args.deinit();
 
     try converter.convert(allocator, args.filename_in, args.filename_out);
