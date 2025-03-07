@@ -49,15 +49,18 @@ pub fn Parser(comptime ReaderType: type) type {
                 },
                 0x80 => if (b != 0x9f) blk: {
                     const size = try self.nextInt(b);
-                    var array = try std.ArrayListUnmanaged(Value).initCapacity(self.allocator, size);
+                    var array = try std.ArrayListUnmanaged(*Value).initCapacity(self.allocator, size);
                     errdefer {
                         for (array.items) |item| {
                             item.deinit(self.allocator);
+                            self.allocator.destroy(item);
                         }
                         array.deinit(self.allocator);
                     }
                     for (0..size) |_| {
-                        const item = (try self.nextValue()) orelse return Error.EndOfStream;
+                        const item = try self.allocator.create(Value);
+                        errdefer self.allocator.destroy(item);
+                        item.* = (try self.nextValue()) orelse return Error.EndOfStream;
                         errdefer item.deinit(self.allocator);
                         try array.append(self.allocator, item);
                     }
@@ -70,28 +73,32 @@ pub fn Parser(comptime ReaderType: type) type {
                     var map = try std.ArrayListUnmanaged(Value.MapStruct).initCapacity(self.allocator, size);
                     errdefer {
                         for (map.items) |item| {
-                            item.key.deinit(self.allocator);
                             item.value.deinit(self.allocator);
+                            self.allocator.destroy(item.value);
+                            item.key.deinit(self.allocator);
+                            self.allocator.destroy(item.key);
                         }
                         map.deinit(self.allocator);
                     }
                     for (0..size) |_| {
-                        const key = (try self.nextValue()) orelse return Error.EndOfStream;
+                        const key = try self.allocator.create(Value);
+                        errdefer self.allocator.destroy(key);
+                        key.* = (try self.nextValue()) orelse return Error.EndOfStream;
                         errdefer key.deinit(self.allocator);
-                        const value = (try self.nextValue()) orelse return Error.EndOfStream;
+                        const value = try self.allocator.create(Value);
+                        errdefer self.allocator.destroy(value);
+                        value.* = (try self.nextValue()) orelse return Error.EndOfStream;
                         errdefer value.deinit(self.allocator);
                         try map.append(self.allocator, Value.MapStruct{ .key = key, .value = value });
                     }
                     break :blk Value{ .map = map };
                 },
                 0xc0 => blk: {
-                    const tag = try self.allocator.create(Value.TagStruct);
-                    errdefer self.allocator.destroy(tag);
-                    tag.* = Value.TagStruct{
-                        .tag = try self.nextInt(b),
-                        .value = (try self.nextValue()) orelse return Error.EndOfStream,
-                    };
-                    break :blk Value{ .tag = tag };
+                    const tag = try self.nextInt(b);
+                    const value = try self.allocator.create(Value);
+                    errdefer self.allocator.destroy(value);
+                    value.* = (try self.nextValue()) orelse return Error.EndOfStream;
+                    break :blk Value{ .tag = Value.TagStruct{ .tag = tag, .value = value } };
                 },
                 0xe0 => switch (b) {
                     0xf4 => Value{ .false = {} },

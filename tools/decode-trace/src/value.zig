@@ -22,10 +22,10 @@ pub const Value = union(Tag) {
     neg_int: u64,
     bytes: []u8,
     string: []u8,
-    array: std.ArrayListUnmanaged(Value),
+    array: std.ArrayListUnmanaged(*Value),
     stream_array_start,
     map: std.ArrayListUnmanaged(MapStruct),
-    tag: *TagStruct,
+    tag: TagStruct,
     false,
     true,
     null,
@@ -34,8 +34,8 @@ pub const Value = union(Tag) {
     break_mark,
 
     pub const Self = @This();
-    pub const MapStruct = struct { key: Value, value: Value };
-    pub const TagStruct = struct { tag: u64, value: Value };
+    pub const MapStruct = struct { key: *Value, value: *Value };
+    pub const TagStruct = struct { tag: u64, value: *Value };
 
     pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
         switch (self) {
@@ -46,6 +46,7 @@ pub const Value = union(Tag) {
                 var array = array_;
                 for (array.items) |item| {
                     item.deinit(allocator);
+                    allocator.destroy(item);
                 }
                 array.deinit(allocator);
             },
@@ -53,14 +54,16 @@ pub const Value = union(Tag) {
             .map => |map_| {
                 var map = map_;
                 for (map.items) |item| {
-                    item.key.deinit(allocator);
                     item.value.deinit(allocator);
+                    allocator.destroy(item.value);
+                    item.key.deinit(allocator);
+                    allocator.destroy(item.key);
                 }
                 map.deinit(allocator);
             },
             .tag => |tag| {
                 tag.value.deinit(allocator);
-                allocator.destroy(tag);
+                allocator.destroy(tag.value);
             },
             .false, .true, .null, .float32, .float64, .break_mark => {},
         }
@@ -72,15 +75,18 @@ pub const Value = union(Tag) {
             .bytes => |item| Self{ .bytes = try allocator.dupe(u8, item) },
             .string => |item| Self{ .string = try allocator.dupe(u8, item) },
             .array => |old_array| blk: {
-                var array = try std.ArrayListUnmanaged(Self).initCapacity(allocator, old_array.items.len);
+                var array = try std.ArrayListUnmanaged(*Self).initCapacity(allocator, old_array.items.len);
                 errdefer {
                     for (array.items) |item| {
                         item.deinit(allocator);
+                        allocator.destroy(item);
                     }
                     array.deinit(allocator);
                 }
                 for (old_array.items) |old_item| {
-                    const item = try old_item.clone(allocator);
+                    const item = try allocator.create(Self);
+                    errdefer allocator.destroy(item);
+                    item.* = try old_item.clone(allocator);
                     errdefer item.deinit(allocator);
                     try array.append(allocator, item);
                 }
@@ -91,28 +97,31 @@ pub const Value = union(Tag) {
                 var map = try std.ArrayListUnmanaged(MapStruct).initCapacity(allocator, old_map.items.len);
                 errdefer {
                     for (map.items) |item| {
-                        item.key.deinit(allocator);
                         item.value.deinit(allocator);
+                        allocator.destroy(item.value);
+                        item.key.deinit(allocator);
+                        allocator.destroy(item.key);
                     }
                     map.deinit(allocator);
                 }
                 for (old_map.items) |old_item| {
-                    const key = try old_item.key.clone(allocator);
+                    const key = try allocator.create(Self);
+                    errdefer allocator.destroy(key);
+                    key.* = try old_item.key.clone(allocator);
                     errdefer key.deinit(allocator);
-                    const value = try old_item.value.clone(allocator);
+                    const value = try allocator.create(Self);
+                    errdefer allocator.destroy(value);
+                    value.* = try old_item.value.clone(allocator);
                     errdefer value.deinit(allocator);
                     try map.append(allocator, MapStruct{ .key = key, .value = value });
                 }
                 break :blk Self{ .map = map };
             },
             .tag => |old_tag| blk: {
-                const tag = try allocator.create(TagStruct);
-                errdefer allocator.destroy(tag);
-                tag.* = TagStruct{
-                    .tag = old_tag.tag,
-                    .value = try old_tag.value.clone(allocator),
-                };
-                break :blk Self{ .tag = tag };
+                const value = try allocator.create(Self);
+                errdefer allocator.destroy(value);
+                value.* = try old_tag.value.clone(allocator);
+                break :blk Self{ .tag = TagStruct{ .tag = old_tag.tag, .value = value } };
             },
             .false, .true, .null, .float32, .float64, .break_mark => self,
         };
@@ -133,7 +142,7 @@ pub const Value = union(Tag) {
     pub fn getIdentifier(self: Value) ?[]const u8 {
         return switch (self) {
             .tag => |tag| switch (tag.tag) {
-                39 => switch (tag.value) {
+                39 => switch (tag.value.*) {
                     .bytes => |id| id,
                     else => null,
                 },

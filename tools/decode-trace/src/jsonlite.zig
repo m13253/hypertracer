@@ -21,7 +21,7 @@ pub fn Writer(comptime WriterType: type) type {
             return switch (value) {
                 .pos_int => |item| std.fmt.formatInt(item, 10, .lower, .{}, self.w),
                 .neg_int => |item| if (item == 0xffff_ffff_ffff_ffff)
-                    self.w.witeAll("-18446744073709551616")
+                    self.w.writeAll("-18446744073709551616")
                 else
                     self.w.print("-{}", .{item + 1}),
                 .bytes => Error.UnsupportedDataType,
@@ -34,7 +34,7 @@ pub fn Writer(comptime WriterType: type) type {
                             try self.w.writeByte(',');
                         }
                         comma = true;
-                        try self.write(item);
+                        try self.write(item.*);
                     }
                     try self.w.writeByte(']');
                 },
@@ -47,30 +47,30 @@ pub fn Writer(comptime WriterType: type) type {
                             try self.w.writeByte(',');
                         }
                         comma = true;
-                        try self.write(item.key);
+                        try self.write(item.key.*);
                         try self.w.writeByte(':');
-                        try self.write(item.value);
+                        try self.write(item.value.*);
                     }
                     try self.w.writeByte('}');
                 },
                 .tag => |tag| switch (tag.tag) {
-                    1001 => switch (tag.value) {
+                    1001 => switch (tag.value.*) {
                         .map => |timestamp| {
                             var sec: ?i65 = null;
                             var nsec: ?i65 = null;
                             for (timestamp.items) |component| {
-                                switch (component.key.toInt65()) {
+                                switch (component.key.getInt65() orelse return Error.UnsupportedTimestampFormat) {
                                     1 => {
                                         if (sec != null) {
                                             return Error.UnsupportedTimestampFormat;
                                         }
-                                        sec = component.value.toInt65();
+                                        sec = component.value.getInt65();
                                     },
                                     -9 => {
                                         if (nsec != null) {
                                             return Error.UnsupportedTimestampFormat;
                                         }
-                                        nsec = component.value.toInt65();
+                                        nsec = component.value.getInt65();
                                     },
                                     else => return Error.UnsupportedTimestampFormat,
                                 }
@@ -87,8 +87,8 @@ pub fn Writer(comptime WriterType: type) type {
                 .false => self.w.writeAll("false"),
                 .true => self.w.writeAll("true"),
                 .null => self.w.writeAll("null"),
-                .float32 => |item| self.w.print("{}", item),
-                .float64 => |item| self.w.print("{}", item),
+                .float32 => |item| self.w.print("{}", .{item}),
+                .float64 => |item| self.w.print("{}", .{item}),
                 .break_mark => Error.UnsupportedDataType,
             };
         }
