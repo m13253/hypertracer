@@ -2,49 +2,56 @@ const std = @import("std");
 
 pub const ArgParser = struct {
     arena: *std.heap.ArenaAllocator,
-    filename_in: std.ArrayList([]const u8),
-    filename_out: ?[]const u8 = null,
-    will_print_help: bool = false,
+    filename_in: []const []const u8,
+    filename_out: ?[]const u8,
 
-    const Self = @This();
-    const Error = error{ArgParseError} || std.mem.Allocator.Error;
+    pub const Self = @This();
+    pub const Error = error{ArgParseError} || std.mem.Allocator.Error;
 
-    pub fn init(allocator: std.mem.Allocator, args: *std.process.ArgIterator) Error!Self {
+    pub fn init(allocator: std.mem.Allocator, args: *std.process.ArgIterator) Error!?Self {
         const arena = try allocator.create(std.heap.ArenaAllocator);
         errdefer allocator.destroy(arena);
         arena.* = std.heap.ArenaAllocator.init(allocator);
         errdefer arena.deinit();
         const arenaAllocator = arena.allocator();
 
-        var parsed = Self{
-            .arena = arena,
-            .filename_in = std.ArrayList([]const u8).init(allocator),
+        var program_name: ?[]const u8 = null;
+        defer if (program_name) |buf| {
+            allocator.free(buf);
         };
-        errdefer parsed.filename_in.deinit();
-
-        var state: enum { Start, DashDash, DashO } = .Start;
+        var filename_in = std.ArrayList([]const u8).init(allocator);
+        defer filename_in.deinit();
+        var filename_out: ?[]const u8 = null;
+        var state: enum { Start, Continue, DashDash, DashO } = .Start;
         while (args.next()) |arg| {
             switch (state) {
-                .Start => if (std.mem.eql(u8, arg, "--")) {
+                .Start => {
+                    program_name = try allocator.dupe(u8, arg);
+                    state = .Continue;
+                },
+                .Continue => if (std.mem.eql(u8, arg, "--")) {
                     state = .DashDash;
                 } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-?")) {
-                    parsed.will_print_help = true;
+                    print_help(program_name);
+                    arena.deinit();
+                    allocator.destroy(arena);
+                    return null;
                 } else if (std.mem.eql(u8, arg, "-o")) {
-                    if (parsed.filename_out != null) {
-                        std.debug.print("Error: Only one \"-o\" is allowed.\n", .{});
+                    if (filename_out != null) {
+                        std.debug.print("Error: Please specify only one output file.\n", .{});
                         return Error.ArgParseError;
                     }
                     state = .DashO;
                 } else if (arg.len > 1 and arg[0] == '-') {
-                    std.debug.print("Error: Unknown option: \"{s}\"\n", .{arg});
+                    std.debug.print("Error: Unknown option: \"{s}\".\n", .{arg});
                     return Error.ArgParseError;
                 } else {
-                    try parsed.filename_in.append(try std.mem.Allocator.dupe(arenaAllocator, u8, arg));
+                    try filename_in.append(try std.mem.Allocator.dupe(arenaAllocator, u8, arg));
                 },
-                .DashDash => try parsed.filename_in.append(try std.mem.Allocator.dupe(arenaAllocator, u8, arg)),
+                .DashDash => try filename_in.append(try std.mem.Allocator.dupe(arenaAllocator, u8, arg)),
                 .DashO => {
-                    state = .Start;
-                    parsed.filename_out = try std.mem.Allocator.dupe(arenaAllocator, u8, arg);
+                    state = .Continue;
+                    filename_out = try std.mem.Allocator.dupe(arenaAllocator, u8, arg);
                 },
             }
         }
@@ -52,13 +59,32 @@ pub const ArgParser = struct {
             std.debug.print("Error: Option \"-o\" is missing an argument.\n", .{});
             return Error.ArgParseError;
         }
-        return parsed;
+        if (filename_in.items.len == 0) {
+            std.debug.print("Error: Please specify input files.\n", .{});
+            print_help(program_name);
+            return Error.ArgParseError;
+        }
+        return Self{
+            .arena = arena,
+            .filename_in = try std.mem.Allocator.dupe(arenaAllocator, []const u8, filename_in.items),
+            .filename_out = filename_out,
+        };
     }
 
     pub fn deinit(self: Self) void {
-        self.filename_in.deinit();
         const child_allocator = self.arena.child_allocator;
         self.arena.deinit();
         child_allocator.destroy(self.arena);
+    }
+
+    fn print_help(program_name: ?[]const u8) void {
+        std.io.getStdOut().writer().print(
+            \\Usage: {s} INPUT.trace [ INPUT.trace ... ] [ -o OUTPUT.json ]
+            \\
+            \\Arguments:
+            \\    --help              Show this help message.
+            \\    -o OUTPUT.json      Specify output file name.
+            \\
+        , .{program_name orelse "decode-trace"}) catch {};
     }
 };

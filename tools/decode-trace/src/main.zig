@@ -1,6 +1,11 @@
 const std = @import("std");
 const argparser = @import("argparser.zig");
+const converter = @import("converter.zig");
 const cborlite = @import("cborlite.zig");
+
+pub const std_options = std.Options{
+    .fmt_max_depth = std.math.maxInt(usize),
+};
 
 pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -14,8 +19,12 @@ pub fn main() !u8 {
             return 1;
         }
         return err;
+    } orelse {
+        return 0;
     };
     defer args.deinit();
+
+    try converter.convert(allocator, args.filename_in, args.filename_out);
 
     return 0;
 }

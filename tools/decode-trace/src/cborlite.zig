@@ -6,11 +6,11 @@ pub fn Parser(comptime ReaderType: type) type {
         allocator: std.mem.Allocator,
         r: std.io.CountingReader(ReaderType),
 
-        const Self = @This();
-        const Error = error{
+        pub const Self = @This();
+        pub const Error = error{
             UnexpectedEndOfInput,
             UnsupportedDataType,
-        } || std.mem.Allocator.Error || std.io.CountingReader(ReaderType).Error || std.io.CountingReader(ReaderType).Reader.NoEofError;
+        } || std.mem.Allocator.Error || std.io.CountingReader(ReaderType).Reader.NoEofError;
 
         pub fn init(allocator: std.mem.Allocator, r: ReaderType) Self {
             return Self{
@@ -23,29 +23,13 @@ pub fn Parser(comptime ReaderType: type) type {
             return self.r.bytes_read;
         }
 
-        pub fn deinitValue(self: Self, value: Value) void {
-            switch (value) {
-                .pos_int, .neg_int => {},
-                .bytes => |item| self.allocator.free(item),
-                .string => |item| self.allocator.free(item),
-                .array => |array| for (array) |item| {
-                    self.deinitValue(item);
-                },
-                .stream_array_start => {},
-                .map => |map| for (map) |item| {
-                    self.deinitValue(item.key);
-                    self.deinitValue(item.value);
-                },
-                .tag => |tag| {
-                    self.deinitValue(tag.value);
-                    self.allocator.free(tag);
-                },
-                .false, .true, .null, .float32, .float64, .break_mark => {},
-            }
-        }
-
-        pub fn nextValue(self: *Self) Error!Value {
-            const b = try self.r.reader().readByte();
+        pub fn nextValue(self: *Self) Error!?Value {
+            const b = self.r.reader().readByte() catch |err| {
+                if (err == Error.EndOfStream) {
+                    return null;
+                }
+                return err;
+            };
             return switch (b & 0xe0) {
                 0x00 => Value{ .pos_int = try self.nextInt(b) },
                 0x20 => Value{ .neg_int = try self.nextInt(b) },
@@ -63,12 +47,19 @@ pub fn Parser(comptime ReaderType: type) type {
                     try self.r.reader().readNoEof(string);
                     break :blk Value{ .string = string };
                 },
-                0x80 => if (b != 0x8f) blk: {
+                0x80 => if (b != 0x9f) blk: {
                     const size = try self.nextInt(b);
-                    const array = try self.allocator.alloc(Value, size);
-                    errdefer self.allocator.free(array);
-                    for (array) |*item| {
-                        item.* = try self.nextValue();
+                    var array = try std.ArrayListUnmanaged(Value).initCapacity(self.allocator, size);
+                    errdefer {
+                        for (array.items) |item| {
+                            item.deinit(self.allocator);
+                        }
+                        array.deinit(self.allocator);
+                    }
+                    for (0..size) |_| {
+                        const item = (try self.nextValue()) orelse return Error.EndOfStream;
+                        errdefer item.deinit(self.allocator);
+                        try array.append(self.allocator, item);
                     }
                     break :blk Value{ .array = array };
                 } else blk: {
@@ -76,19 +67,30 @@ pub fn Parser(comptime ReaderType: type) type {
                 },
                 0xa0 => blk: {
                     const size = try self.nextInt(b);
-                    const map = try self.allocator.alloc(Value.MapStruct, size);
-                    errdefer self.allocator.free(map);
-                    for (map) |*item| {
-                        item.key = try self.nextValue();
-                        item.value = try self.nextValue();
+                    var map = try std.ArrayListUnmanaged(Value.MapStruct).initCapacity(self.allocator, size);
+                    errdefer {
+                        for (map.items) |item| {
+                            item.key.deinit(self.allocator);
+                            item.value.deinit(self.allocator);
+                        }
+                        map.deinit(self.allocator);
+                    }
+                    for (0..size) |_| {
+                        const key = (try self.nextValue()) orelse return Error.EndOfStream;
+                        errdefer key.deinit(self.allocator);
+                        const value = (try self.nextValue()) orelse return Error.EndOfStream;
+                        errdefer value.deinit(self.allocator);
+                        try map.append(self.allocator, Value.MapStruct{ .key = key, .value = value });
                     }
                     break :blk Value{ .map = map };
                 },
                 0xc0 => blk: {
                     const tag = try self.allocator.create(Value.TagStruct);
                     errdefer self.allocator.destroy(tag);
-                    tag.tag = try self.nextInt(b);
-                    tag.value = try self.nextValue();
+                    tag.* = Value.TagStruct{
+                        .tag = try self.nextInt(b),
+                        .value = (try self.nextValue()) orelse return Error.EndOfStream,
+                    };
                     break :blk Value{ .tag = tag };
                 },
                 0xe0 => switch (b) {
