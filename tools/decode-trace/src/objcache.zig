@@ -49,7 +49,7 @@ pub const ObjCache = struct {
 
     pub fn processRecord(self: *Self, record: Value) Error!?Value {
         // [null, [Child]] => Add Child to root
-        // [ParentID] => Close container
+        // [ParentID] => Close the container
         // [ParentID, [Child]] => Add Child to ParentID
         // [ParentID, {Child: Child}] => Add Child: Child to ParentID
         return switch (record) {
@@ -182,8 +182,8 @@ pub const ObjCache = struct {
     // child_id has the same lifetime as item,
     // child_value is owned by RootRecord.
     fn processChild(self: *Self, parent_id: ?[]const u8, item: Value) Error!struct { ?[]const u8, *Value } {
-        // [ID, []] a new array
-        // [ID, {}] a new map
+        // [ID, []] => Open a new array
+        // [ID, {}] => Open a new map
         const child_id: ?[]const u8, const child = switch (item) {
             .array => |array| blk1: {
                 if (array.items.len != 2) {
