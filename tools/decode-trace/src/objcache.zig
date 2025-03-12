@@ -56,7 +56,7 @@ pub const ObjCache = struct {
             .array => |record_array| switch (record_array.items.len) {
                 // A close record
                 1 => return self.closeContainer(record_array.items[0].getIdentifier() orelse return Error.InvalidTracingFormat),
-                2 => blk: {
+                2 => {
                     const parent_id = switch (record_array.items[0].*) {
                         .null => null,
                         else => record_array.items[0].getIdentifier() orelse return Error.InvalidTracingFormat,
@@ -66,7 +66,7 @@ pub const ObjCache = struct {
                         .map => |item_map| self.appendToMapContainer(parent_id, item_map.items),
                         else => Error.InvalidTracingFormat,
                     };
-                    break :blk null;
+                    return null;
                 },
                 else => Error.InvalidTracingFormat,
             },
@@ -75,7 +75,7 @@ pub const ObjCache = struct {
     }
 
     pub fn popRemaining(self: *Self) ?Value {
-        if (self.root.popOrNull()) |entry| {
+        if (self.root.pop()) |entry| {
             self.allocator.free(entry.key);
             const value_copy = entry.value.value.*;
             self.allocator.destroy(entry.value.value);
@@ -99,7 +99,7 @@ pub const ObjCache = struct {
         return null;
     }
 
-    fn appendToArrayContainer(self: *Self, parent_id: ?[]const u8, item: []*const Value) Error!void {
+    fn appendToArrayContainer(self: *Self, parent_id: ?[]const u8, item: []const *const Value) Error!void {
         if (parent_id) |parent_id_| {
             const parent = self.cache.get(parent_id_) orelse return Error.PayloadContainerNotFound;
             switch (parent.value.*) {
@@ -184,15 +184,15 @@ pub const ObjCache = struct {
     fn processChild(self: *Self, parent_id: ?[]const u8, item: Value) Error!struct { ?[]const u8, *Value } {
         // [ID, []] => Open a new array
         // [ID, {}] => Open a new map
-        const child_id: ?[]const u8, const child = switch (item) {
-            .array => |array| blk1: {
+        const child_id: ?[]const u8, const child = blk1: switch (item) {
+            .array => |array| {
                 if (array.items.len != 2) {
                     return Error.InvalidTracingFormat;
                 }
                 break :blk1 .{
                     array.items[0].getIdentifier() orelse return Error.InvalidTracingFormat,
-                    switch (array.items[1].*) {
-                        .array => |child_array| blk2: {
+                    blk2: switch (array.items[1].*) {
+                        .array => |child_array| {
                             if (child_array.items.len != 0) {
                                 return Error.InvalidTracingFormat;
                             }
@@ -201,7 +201,7 @@ pub const ObjCache = struct {
                             child_value.* = Value{ .array = std.ArrayListUnmanaged(*Value){} };
                             break :blk2 child_value;
                         },
-                        .map => |child_map| blk2: {
+                        .map => |child_map| {
                             if (child_map.items.len != 0) {
                                 return Error.InvalidTracingFormat;
                             }
@@ -215,7 +215,7 @@ pub const ObjCache = struct {
                 };
             },
             .stream_array_start, .map, .break_mark => return Error.InvalidTracingFormat,
-            else => blk1: {
+            else => {
                 const child_value = try self.allocator.create(Value);
                 errdefer self.allocator.destroy(child_value);
                 child_value.* = try item.clone(self.allocator);

@@ -33,21 +33,21 @@ pub fn Parser(comptime ReaderType: type) type {
             return switch (b & 0xe0) {
                 0x00 => Value{ .pos_int = try self.nextInt(b) },
                 0x20 => Value{ .neg_int = try self.nextInt(b) },
-                0x40 => blk: {
+                0x40 => {
                     const size = try self.nextInt(b);
                     const bytes = try self.allocator.alloc(u8, size);
                     errdefer self.allocator.free(bytes);
                     try self.r.reader().readNoEof(bytes);
-                    break :blk Value{ .bytes = bytes };
+                    return Value{ .bytes = bytes };
                 },
-                0x60 => blk: {
+                0x60 => {
                     const size = try self.nextInt(b);
                     const string = try self.allocator.alloc(u8, size);
                     errdefer self.allocator.free(string);
                     try self.r.reader().readNoEof(string);
-                    break :blk Value{ .string = string };
+                    return Value{ .string = string };
                 },
-                0x80 => if (b != 0x9f) blk: {
+                0x80 => if (b != 0x9f) {
                     const size = try self.nextInt(b);
                     var array = try std.ArrayListUnmanaged(*Value).initCapacity(self.allocator, size);
                     errdefer {
@@ -64,11 +64,11 @@ pub fn Parser(comptime ReaderType: type) type {
                         errdefer item.deinit(self.allocator);
                         try array.append(self.allocator, item);
                     }
-                    break :blk Value{ .array = array };
-                } else blk: {
-                    break :blk Value{ .stream_array_start = {} };
+                    return Value{ .array = array };
+                } else {
+                    return Value{ .stream_array_start = {} };
                 },
-                0xa0 => blk: {
+                0xa0 => {
                     const size = try self.nextInt(b);
                     var map = try std.ArrayListUnmanaged(Value.MapStruct).initCapacity(self.allocator, size);
                     errdefer {
@@ -91,14 +91,14 @@ pub fn Parser(comptime ReaderType: type) type {
                         errdefer value.deinit(self.allocator);
                         try map.append(self.allocator, Value.MapStruct{ .key = key, .value = value });
                     }
-                    break :blk Value{ .map = map };
+                    return Value{ .map = map };
                 },
-                0xc0 => blk: {
+                0xc0 => {
                     const tag = try self.nextInt(b);
                     const value = try self.allocator.create(Value);
                     errdefer self.allocator.destroy(value);
                     value.* = (try self.nextValue()) orelse return Error.EndOfStream;
-                    break :blk Value{ .tag = Value.TagStruct{ .tag = tag, .value = value } };
+                    return Value{ .tag = Value.TagStruct{ .tag = tag, .value = value } };
                 },
                 0xe0 => switch (b) {
                     0xf4 => Value{ .false = {} },
@@ -121,7 +121,7 @@ pub fn Parser(comptime ReaderType: type) type {
                 0x19 => std.mem.readInt(u16, &try self.r.reader().readBytesNoEof(2), .big),
                 0x1a => std.mem.readInt(u32, &try self.r.reader().readBytesNoEof(4), .big),
                 0x1b => std.mem.readInt(u64, &try self.r.reader().readBytesNoEof(8), .big),
-                0x1c...0x1f => return Error.UnsupportedDataType,
+                0x1c...0x1f => Error.UnsupportedDataType,
                 else => unreachable,
             };
         }

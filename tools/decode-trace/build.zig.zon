@@ -1,6 +1,8 @@
 .{
-    .name = "decode-trace",
+    .name = .decode_trace,
     .version = "0.0.0",
+    .fingerprint = 0x4f860ff99e8c4045,
+    .minimum_zig_version = "0.14.0",
     .dependencies = .{},
     .paths = .{
         "build.zig",
