@@ -7,6 +7,7 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "decode-trace",
         .root_source_file = b.path("src/main.zig"),
+        .single_threaded = true,
         .target = target,
         .optimize = optimize,
     });
