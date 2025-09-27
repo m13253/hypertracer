@@ -2,7 +2,6 @@ const std = @import("std");
 const Value = @import("value.zig").Value;
 
 pub const ObjCache = struct {
-    allocator: std.mem.Allocator,
     root: std.StringArrayHashMapUnmanaged(RootRecord),
     cache: std.StringHashMapUnmanaged(CacheRecord),
 
@@ -22,32 +21,31 @@ pub const ObjCache = struct {
         root: []const u8, // Owned by RootRecord
     };
 
-    pub fn init(allocator: std.mem.Allocator) Self {
+    pub fn init() Self {
         return Self{
-            .allocator = allocator,
             .root = .{},
             .cache = .{},
         };
     }
 
-    pub fn deinit(self: Self) void {
+    pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
         var cache = self.cache;
         var cache_iter = cache.iterator();
         while (cache_iter.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
+            allocator.free(entry.key_ptr.*);
         }
-        cache.deinit(self.allocator);
+        cache.deinit(allocator);
         var root = self.root;
         var root_iter = root.iterator();
         while (root_iter.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-            entry.value_ptr.value.deinit(self.allocator);
-            self.allocator.destroy(entry.value_ptr.value);
+            allocator.free(entry.key_ptr.*);
+            entry.value_ptr.value.deinit(allocator);
+            allocator.destroy(entry.value_ptr.value);
         }
-        root.deinit(self.allocator);
+        root.deinit(allocator);
     }
 
-    pub fn processRecord(self: *Self, record: Value) Error!?Value {
+    pub fn processRecord(self: *Self, allocator: std.mem.Allocator, record: Value) Error!?Value {
         // [null, [Child]] => Add Child to root
         // [ParentID] => Close the container
         // [ParentID, [Child]] => Add Child to ParentID
@@ -55,15 +53,15 @@ pub const ObjCache = struct {
         return switch (record) {
             .array => |record_array| switch (record_array.items.len) {
                 // A close record
-                1 => return self.closeContainer(record_array.items[0].getIdentifier() orelse return Error.InvalidTracingFormat),
+                1 => return self.closeContainer(allocator, record_array.items[0].getIdentifier() orelse return Error.InvalidTracingFormat),
                 2 => {
                     const parent_id = switch (record_array.items[0].*) {
                         .null => null,
                         else => record_array.items[0].getIdentifier() orelse return Error.InvalidTracingFormat,
                     };
                     try switch (record_array.items[1].*) {
-                        .array => |item_array| self.appendToArrayContainer(parent_id, item_array.items),
-                        .map => |item_map| self.appendToMapContainer(parent_id, item_map.items),
+                        .array => |item_array| self.appendToArrayContainer(allocator, parent_id, item_array.items),
+                        .map => |item_map| self.appendToMapContainer(allocator, parent_id, item_map.items),
                         else => Error.InvalidTracingFormat,
                     };
                     return null;
@@ -74,104 +72,104 @@ pub const ObjCache = struct {
         };
     }
 
-    pub fn popRemaining(self: *Self) ?Value {
+    pub fn popRemaining(self: *Self, allocator: std.mem.Allocator) ?Value {
         if (self.root.pop()) |entry| {
-            self.allocator.free(entry.key);
+            allocator.free(entry.key);
             const value_copy = entry.value.value.*;
-            self.allocator.destroy(entry.value.value);
+            allocator.destroy(entry.value.value);
             return value_copy;
         }
         return null;
     }
 
-    fn closeContainer(self: *Self, container_id: []const u8) Error!?Value {
+    fn closeContainer(self: *Self, allocator: std.mem.Allocator, container_id: []const u8) Error!?Value {
         const cache_entry = self.cache.fetchRemove(container_id) orelse return Error.PayloadContainerNotFound;
-        self.allocator.free(cache_entry.key);
+        allocator.free(cache_entry.key);
         const root = self.root.getPtr(cache_entry.value.root) orelse return Error.PayloadContainerNotFound;
         root.refcount -= 1;
         if (root.refcount == 0) {
             const root_entry = self.root.fetchOrderedRemove(cache_entry.value.root).?;
-            self.allocator.free(root_entry.key);
+            allocator.free(root_entry.key);
             const value_copy = root_entry.value.value.*;
-            self.allocator.destroy(root_entry.value.value);
+            allocator.destroy(root_entry.value.value);
             return value_copy;
         }
         return null;
     }
 
-    fn appendToArrayContainer(self: *Self, parent_id: ?[]const u8, item: []const *const Value) Error!void {
+    fn appendToArrayContainer(self: *Self, allocator: std.mem.Allocator, parent_id: ?[]const u8, item: []const *const Value) Error!void {
         if (parent_id) |parent_id_| {
             const parent = self.cache.get(parent_id_) orelse return Error.PayloadContainerNotFound;
             switch (parent.value.*) {
                 .array => |*array| {
-                    var child_ids = try std.ArrayList([]const u8).initCapacity(self.allocator, item.len);
-                    defer child_ids.deinit();
+                    var child_ids = try std.ArrayList([]const u8).initCapacity(allocator, item.len);
+                    defer child_ids.deinit(allocator);
                     const old_length = array.items.len;
                     errdefer {
-                        array.resize(self.allocator, old_length) catch {};
+                        array.resize(allocator, old_length) catch {};
                         for (child_ids.items) |child_id| {
-                            if (self.closeContainer(child_id) catch null) |child_value| {
-                                child_value.deinit(self.allocator);
+                            if (self.closeContainer(allocator, child_id) catch null) |child_value| {
+                                child_value.deinit(allocator);
                             }
                         }
                     }
                     for (item) |i| {
-                        const child = try self.processChild(parent_id, i.*);
+                        const child = try self.processChild(allocator, parent_id, i.*);
                         if (child[0]) |child_id| {
-                            try child_ids.append(child_id);
+                            try child_ids.append(allocator, child_id);
                         }
-                        try array.append(self.allocator, child[1]);
+                        try array.append(allocator, child[1]);
                     }
                 },
                 else => return Error.PayloadContainerTypeMismatch,
             }
         } else {
-            var child_ids = try std.ArrayList([]const u8).initCapacity(self.allocator, item.len);
-            defer child_ids.deinit();
+            var child_ids = try std.ArrayList([]const u8).initCapacity(allocator, item.len);
+            defer child_ids.deinit(allocator);
             errdefer {
                 for (child_ids.items) |child_id| {
-                    if (self.closeContainer(child_id) catch null) |child_value| {
-                        child_value.deinit(self.allocator);
+                    if (self.closeContainer(allocator, child_id) catch null) |child_value| {
+                        child_value.deinit(allocator);
                     }
                 }
             }
             for (item) |i| {
-                const child = try self.processChild(parent_id, i.*);
+                const child = try self.processChild(allocator, parent_id, i.*);
                 if (child[0]) |child_id| {
-                    try child_ids.append(child_id);
+                    try child_ids.append(allocator, child_id);
                 }
             }
         }
     }
 
-    fn appendToMapContainer(self: *Self, parent_id: ?[]const u8, item: []const Value.MapStruct) Error!void {
+    fn appendToMapContainer(self: *Self, allocator: std.mem.Allocator, parent_id: ?[]const u8, item: []const Value.MapStruct) Error!void {
         if (parent_id == null) {
             return Error.PayloadContainerTypeMismatch;
         }
         const parent = self.cache.get(parent_id.?) orelse return Error.PayloadContainerNotFound;
         switch (parent.value.*) {
             .map => |*map| {
-                var child_ids = try std.ArrayList([]const u8).initCapacity(self.allocator, item.len);
-                defer child_ids.deinit();
+                var child_ids = try std.ArrayList([]const u8).initCapacity(allocator, item.len);
+                defer child_ids.deinit(allocator);
                 const old_length = map.items.len;
                 errdefer {
-                    map.resize(self.allocator, old_length) catch {};
+                    map.resize(allocator, old_length) catch {};
                     for (child_ids.items) |child_id| {
-                        if (self.closeContainer(child_id) catch null) |child_value| {
-                            child_value.deinit(self.allocator);
+                        if (self.closeContainer(allocator, child_id) catch null) |child_value| {
+                            child_value.deinit(allocator);
                         }
                     }
                 }
                 for (item) |i| {
-                    const child_key = try self.processChild(parent_id, i.key.*);
+                    const child_key = try self.processChild(allocator, parent_id, i.key.*);
                     if (child_key[0]) |child_id| {
-                        try child_ids.append(child_id);
+                        try child_ids.append(allocator, child_id);
                     }
-                    const child_value = try self.processChild(parent_id, i.value.*);
+                    const child_value = try self.processChild(allocator, parent_id, i.value.*);
                     if (child_value[0]) |child_id| {
-                        try child_ids.append(child_id);
+                        try child_ids.append(allocator, child_id);
                     }
-                    try map.append(self.allocator, Value.MapStruct{ .key = child_key[1], .value = child_value[1] });
+                    try map.append(allocator, Value.MapStruct{ .key = child_key[1], .value = child_value[1] });
                 }
             },
             else => return Error.PayloadContainerTypeMismatch,
@@ -181,7 +179,7 @@ pub const ObjCache = struct {
     // Return value: { child_id, child_value }
     // child_id has the same lifetime as item,
     // child_value is owned by RootRecord.
-    fn processChild(self: *Self, parent_id: ?[]const u8, item: Value) Error!struct { ?[]const u8, *Value } {
+    fn processChild(self: *Self, allocator: std.mem.Allocator, parent_id: ?[]const u8, item: Value) Error!struct { ?[]const u8, *Value } {
         // [ID, []] => Open a new array
         // [ID, {}] => Open a new map
         const child_id: ?[]const u8, const child = blk1: switch (item) {
@@ -196,8 +194,8 @@ pub const ObjCache = struct {
                             if (child_array.items.len != 0) {
                                 return Error.InvalidTracingFormat;
                             }
-                            const child_value = try self.allocator.create(Value);
-                            errdefer self.allocator.destroy(child_value);
+                            const child_value = try allocator.create(Value);
+                            errdefer allocator.destroy(child_value);
                             child_value.* = Value{ .array = std.ArrayListUnmanaged(*Value){} };
                             break :blk2 child_value;
                         },
@@ -205,8 +203,8 @@ pub const ObjCache = struct {
                             if (child_map.items.len != 0) {
                                 return Error.InvalidTracingFormat;
                             }
-                            const child_value = try self.allocator.create(Value);
-                            errdefer self.allocator.destroy(child_value);
+                            const child_value = try allocator.create(Value);
+                            errdefer allocator.destroy(child_value);
                             child_value.* = Value{ .map = std.ArrayListUnmanaged(Value.MapStruct){} };
                             break :blk2 child_value;
                         },
@@ -216,17 +214,17 @@ pub const ObjCache = struct {
             },
             .stream_array_start, .map, .break_mark => return Error.InvalidTracingFormat,
             else => {
-                const child_value = try self.allocator.create(Value);
-                errdefer self.allocator.destroy(child_value);
-                child_value.* = try item.clone(self.allocator);
+                const child_value = try allocator.create(Value);
+                errdefer allocator.destroy(child_value);
+                child_value.* = try item.clone(allocator);
                 break :blk1 .{ null, child_value };
             },
         };
         if (child_id) |child_id_| {
             const root_id_ptr = blk: {
-                const container_id_key = try self.allocator.dupe(u8, child_id_);
-                errdefer self.allocator.free(container_id_key);
-                const cache_entry = try self.cache.getOrPut(self.allocator, container_id_key);
+                const container_id_key = try allocator.dupe(u8, child_id_);
+                errdefer allocator.free(container_id_key);
+                const cache_entry = try self.cache.getOrPut(allocator, container_id_key);
                 if (cache_entry.found_existing) {
                     return Error.PayloadContainerIDConflict;
                 }
@@ -234,9 +232,9 @@ pub const ObjCache = struct {
                 break :blk &cache_entry.value_ptr.root;
             };
             errdefer if (self.cache.fetchRemove(child_id_)) |entry| {
-                self.allocator.free(entry.key);
-                entry.value.value.deinit(self.allocator);
-                self.allocator.destroy(entry.value.value);
+                allocator.free(entry.key);
+                entry.value.value.deinit(allocator);
+                allocator.destroy(entry.value.value);
             };
             if (parent_id) |parent_id_| {
                 const root_id = (self.cache.get(parent_id_) orelse return Error.PayloadContainerNotFound).root;
@@ -244,9 +242,9 @@ pub const ObjCache = struct {
                 root_id_ptr.* = root_entry.key_ptr.*;
                 root_entry.value_ptr.refcount += 1;
             } else {
-                const root_id_key = try self.allocator.dupe(u8, child_id_);
-                errdefer self.allocator.free(root_id_key);
-                const root_entry = try self.root.getOrPut(self.allocator, root_id_key);
+                const root_id_key = try allocator.dupe(u8, child_id_);
+                errdefer allocator.free(root_id_key);
+                const root_entry = try self.root.getOrPut(allocator, root_id_key);
                 if (root_entry.found_existing) {
                     return Error.PayloadContainerIDConflict;
                 }

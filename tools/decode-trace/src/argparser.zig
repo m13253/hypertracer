@@ -19,8 +19,8 @@ pub const ArgParser = struct {
         defer if (program_name) |buf| {
             allocator.free(buf);
         };
-        var filename_in = std.ArrayList([]const u8).init(allocator);
-        defer filename_in.deinit();
+        var filename_in = std.ArrayList([]const u8).empty;
+        defer filename_in.deinit(allocator);
         var filename_out: ?[]const u8 = null;
         var state: enum { Start, Continue, DashDash, DashO } = .Start;
         while (args.next()) |arg| {
@@ -32,7 +32,7 @@ pub const ArgParser = struct {
                 .Continue => if (std.mem.eql(u8, arg, "--")) {
                     state = .DashDash;
                 } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-?")) {
-                    print_help(program_name);
+                    printHelp(program_name);
                     arena.deinit();
                     allocator.destroy(arena);
                     return null;
@@ -46,9 +46,9 @@ pub const ArgParser = struct {
                     std.debug.print("Error: Unknown option: \"{s}\".\n", .{arg});
                     return Error.ArgParseError;
                 } else {
-                    try filename_in.append(try std.mem.Allocator.dupe(arenaAllocator, u8, arg));
+                    try filename_in.append(allocator, try std.mem.Allocator.dupe(arenaAllocator, u8, arg));
                 },
-                .DashDash => try filename_in.append(try std.mem.Allocator.dupe(arenaAllocator, u8, arg)),
+                .DashDash => try filename_in.append(allocator, try std.mem.Allocator.dupe(arenaAllocator, u8, arg)),
                 .DashO => {
                     state = .Continue;
                     filename_out = try std.mem.Allocator.dupe(arenaAllocator, u8, arg);
@@ -61,7 +61,7 @@ pub const ArgParser = struct {
         }
         if (filename_in.items.len == 0) {
             std.debug.print("Error: Please specify input files.\n", .{});
-            print_help(program_name);
+            printHelp(program_name);
             return Error.ArgParseError;
         }
         return Self{
@@ -77,8 +77,11 @@ pub const ArgParser = struct {
         child_allocator.destroy(self.arena);
     }
 
-    fn print_help(program_name: ?[]const u8) void {
-        std.io.getStdOut().writer().print(
+    fn printHelp(program_name: ?[]const u8) void {
+        const DefaultBufferSize = 4096;
+        var stdout_buffer: [DefaultBufferSize]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        stdout_writer.interface.print(
             \\Usage: {s} INPUT.trace [ INPUT.trace ... ] [ -o OUTPUT.json ]
             \\
             \\Arguments:
@@ -86,5 +89,6 @@ pub const ArgParser = struct {
             \\    -o OUTPUT.json      Specify output file name.
             \\
         , .{program_name orelse "decode-trace"}) catch {};
+        stdout_writer.interface.flush() catch {};
     }
 };
