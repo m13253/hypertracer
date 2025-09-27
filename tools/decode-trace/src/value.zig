@@ -131,7 +131,11 @@ pub const Value = union(Tag) {
         return switch (self) {
             .pos_int => |item| item,
             .neg_int => |item| @as(i65, -1) - item,
-            .float32, .float64 => |item| if (@trunc(item) == item and item <= std.math.maxInt(i65) and item >= std.math.minInt(i65))
+            .float32 => |item| if (@trunc(item) == item and item < 0x1_0000_0000_0000_0000 and item >= -0x1_0000_0000_0000_0000)
+                @intFromFloat(item)
+            else
+                null,
+            .float64 => |item| if (@trunc(item) == item and item < 0x1_0000_0000_0000_0000 and item >= -0x1_0000_0000_0000_0000)
                 @intFromFloat(item)
             else
                 null,
